@@ -210,3 +210,22 @@ Project ID `nrk18555`, dataset `production`. Studio lives in `studio/` as a **st
 - **`qualityScore`.** New `number` field on `page`, not present in the TS `Page` interface. It's a denormalized snapshot of the latest SEO/quality score, computed later by the SEO-audit AI call — not a replacement for `SeoAudit`. The full `SeoAudit` entity (breakdown, suggestions, history) is intentionally **not** modeled in Sanity; per this spec's original CMS-agnostic/Sanity-specific split, it continues to live in the app's own DB.
 - **Bookkeeping fields dropped from the Sanity schema.** `Page.id/siteId/cmsDocumentId/latestSeoAuditId/createdAt/updatedAt`, `ImageAsset.id/siteId/cmsAssetId/usedOnPageIds/createdAt/updatedAt`, `ContentBlock.id/order`, and `FaqItem.id/pageId/order` are app-DB bookkeeping, not CMS content — Sanity's own `_id`/`_createdAt`/`_updatedAt` and array `_key`/position cover the CMS-side equivalents, exactly as this spec's "CMS-agnostic vs. Sanity-specific fields" section anticipated. `FaqItem.source` is kept as a real field since it's workflow state (ai-generated vs. manual), not bookkeeping.
 - **No standalone `ImageAsset` document type.** Images are modeled wherever they're used (currently: inline in `body`), using Sanity's native `image` type (hotspot enabled) plus custom `alt` and `altTextStatus` (`missing`/`ai-generated`/`reviewed`) fields — this is what the alt-text batch feature needs at the point of use. Cross-page usage (`usedOnPageIds`) and a library-wide "missing alt text" view are query/app-DB concerns (GROQ's `references()` can compute usage later), not schema concerns.
+
+---
+
+## 5. Next.js ↔ Sanity Integration (Day 3)
+
+`/pages` (list) and `/pages/[slug]` (detail) are real Server Components reading live from the `production` dataset via `src/sanity/client.ts`, `src/sanity/queries.ts`, and `src/sanity/image.ts`. No AI code yet — this is read-only wiring.
+
+### Caching: no caching, on purpose
+
+The Sanity client is created with `useCdn: false`, and every `client.fetch()` call passes `{ cache: "no-store" }`. That means **every request hits the live Sanity API directly** — no CDN cache window, no Next.js Data Cache, no ISR revalidation delay. Chosen over ISR/time-based revalidation because this app is, at this stage, effectively a CMS content review tool: an editor (or this app's own AI features, later) changes a document in Studio and expects to see the result on the next page load, not after a 30–60s revalidation window. The cost — every request re-fetches from Sanity — is a non-issue at this project's scale, and is the same tradeoff `useCdn: false` recommends for anything that isn't high-traffic public delivery. Revisit with tag-based revalidation + webhooks (see `nextjs.md`'s Sanity integration notes) once/if this app serves real traffic rather than being used for content review.
+
+Verified live end-to-end: mutated a sample document's `title` directly (the same effect as editing + publishing in Studio), reloaded `/pages` in the running dev server with no restart, saw the new title immediately, then reverted it. Also verified: an empty result set renders the empty-state message, and a deliberately broken query renders the error-state message instead of a 500/crash — both tested by temporarily editing `queries.ts`, confirming the render path, then restoring the real queries.
+
+### Content states covered
+
+- **Empty dataset:** `/pages` shows "No pages yet."
+- **Missing optional fields:** a real sample page (`new-client-onboarding-checklist`) has no `seo`, no `qualityScore`, and no `faqItems` — the detail view shows "No SEO fields filled in yet." / "No FAQs yet." instead of blank or broken sections.
+- **Sanity request failure:** both routes wrap their fetch in try/catch and render an inline error message with the underlying error text instead of throwing (which would otherwise trigger Next's default error page).
+- **Missing alt text:** one sample image block was seeded with `altTextStatus: "missing"` and a blank `alt`; the detail view renders it and flags the status, which is exactly the signal the alt-text batch feature will need to find candidates later.

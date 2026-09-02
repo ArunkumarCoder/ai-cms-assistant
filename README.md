@@ -6,7 +6,7 @@ See [SPEC.md](./SPEC.md) for the full product spec, data model, and AI call/prov
 
 ## Status
 
-Day 1: spec + scaffold. Day 2: Sanity project, schema, and Studio (`studio/`) are live with sample content. No AI integration code yet, and the Next.js app doesn't read from Sanity yet — that's next.
+Day 1: spec + scaffold. Day 2: Sanity project, schema, and Studio (`studio/`) are live with sample content. Day 3: `/pages` and `/pages/[slug]` read live from Sanity end to end (no caching — see SPEC.md). No AI integration code yet — that's next.
 
 ## Stack
 

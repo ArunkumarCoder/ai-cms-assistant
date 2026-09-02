@@ -6,7 +6,7 @@ See [SPEC.md](./SPEC.md) for the full product spec, data model, and AI call/prov
 
 ## Status
 
-Day 1: spec + scaffold. No CMS or AI integration code yet — that starts once the Sanity project and schema are in place.
+Day 1: spec + scaffold. Day 2: Sanity project, schema, and Studio (`studio/`) are live with sample content. No AI integration code yet, and the Next.js app doesn't read from Sanity yet — that's next.
 
 ## Stack
 
@@ -45,4 +45,15 @@ src/
     cms/  # CMS adapter interface (Sanity now, WordPress later)
     ai/   # Provider-agnostic AI adapter interface (OpenAI, Claude, Groq)
   types/  # Domain model (Site, Page, ContentBlock, SeoAudit, FaqItem, ImageAsset)
+studio/   # Standalone Sanity Studio (its own app — see SPEC.md for why)
 ```
+
+## Sanity Studio
+
+```bash
+cd studio
+npm install
+npm run dev
+```
+
+Open [http://localhost:3333](http://localhost:3333). See [SPEC.md](./SPEC.md#4-sanity-project--schema-day-2) for the schema design and how it maps to (and diverges from) the domain model in `src/types/`.

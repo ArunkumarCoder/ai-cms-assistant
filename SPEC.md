@@ -229,3 +229,31 @@ Verified live end-to-end: mutated a sample document's `title` directly (the same
 - **Missing optional fields:** a real sample page (`new-client-onboarding-checklist`) has no `seo`, no `qualityScore`, and no `faqItems` — the detail view shows "No SEO fields filled in yet." / "No FAQs yet." instead of blank or broken sections.
 - **Sanity request failure:** both routes wrap their fetch in try/catch and render an inline error message with the underlying error text instead of throwing (which would otherwise trigger Next's default error page).
 - **Missing alt text:** one sample image block was seeded with `altTextStatus: "missing"` and a blank `alt`; the detail view renders it and flags the status, which is exactly the signal the alt-text batch feature will need to find candidates later.
+
+---
+
+## 6. CMS Adapter Interface (Day 4)
+
+`CmsAdapter` (`src/lib/cms/adapter.ts`) is the interface every CMS backend must satisfy — Sanity today, WordPress as the stretch goal — so that adding a second CMS is a new adapter file, not a rewrite of the app. Interface only as of Day 4; no implementation exists yet (`src/lib/cms/index.ts` still doesn't wire anything up, and nothing in the app calls this interface yet). Supporting shapes live in `src/lib/cms/types.ts`, all derived from the Day 1 `types/` domain model via `Omit`/`Pick`/`Partial` rather than a second parallel model.
+
+```typescript
+interface CmsAdapter {
+  getPages(): Promise<PageSummary[]>;
+  getPage(slug: string): Promise<Page | null>;
+  createPage(data: CreatePageInput): Promise<Page>;
+  updatePage(cmsDocumentId: string, data: UpdatePageInput): Promise<Page>;
+  listImages(filter?: ImageListFilter): Promise<ImageAsset[]>;
+  updateImage(cmsAssetId: string, data: UpdateImageInput): Promise<ImageAsset>;
+}
+```
+
+### Key decisions (full reasoning is written as comments on the interface itself)
+
+- **One adapter instance per `Site`, not a `siteId` parameter on every call.** `Site` already carries per-backend config (`sanityProjectId`/`sanityDataset`, later `wordpressUrl`), so an adapter is constructed once against one site's backend — matching how `src/sanity/client.ts` is already a single client bound to one project+dataset. Multi-site support means the app holds one adapter instance per `Site`, not threading `siteId` through every method.
+- **Write methods take the CMS's own document/asset id, not `Page.id`/`ImageAsset.id`.** Those domain fields are defined in §2 as "our own DB id," but no app-level datastore exists yet — only a CMS. Until one does, `updatePage`/`updateImage` necessarily operate on what the CMS hands out (Sanity's `_id`), so parameters are named `cmsDocumentId`/`cmsAssetId` to make that explicit rather than ambiguous.
+- **`getPages()` returns `PageSummary`, not `Page`.** A list view doesn't need every page's full body/FAQs hydrated, and forcing that would push every adapter toward a worse query than the UI needs (the existing `PAGES_LIST_QUERY`/`PageListItem` in `src/sanity/types.ts` already does exactly this projection). `PageSummary` is `Page` minus `contentBlocks`/`faqItems`, plus a `faqCount`.
+- **`null` means "not found," not failure.** `getPage` returns `null` for a missing slug — an expected outcome every caller handles — while every method throws on an actual error (network/auth/a write against a stale id), matching the existing convention in `src/sanity/client.ts` and the `/pages` routes' try/catch.
+- **Content-shape translation is adapter-only, never interface-visible.** The interface trades exclusively in the generic `ContentBlock[]`; converting that to/from Sanity's Portable Text `body` (or, later, WordPress Gutenberg blocks) happens entirely inside each adapter. No Portable Text concept appears on `CmsAdapter` or its supporting types.
+- **`listImages`/`updateImage` hide a harder-than-they-look Sanity reality.** Since no standalone `ImageAsset` document type exists (§4 — images live inline in each page's `body`), the Sanity adapter's `listImages` will mean querying across every page's body for image blocks, and `updateImage` will mean patching a specific array member inside whichever page references that asset — not a single-document read/write. The interface deliberately gives no hint of this; hiding it is the point.
+
+Not yet decided (left for the Sanity adapter, Day 5): how `createPage`/`updatePage` choose between writing a Studio draft vs. the published document, and whether `getPages`/`listImages` should support pagination once the sample dataset outgrows a single page of results.

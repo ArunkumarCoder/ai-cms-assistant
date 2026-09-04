@@ -112,7 +112,11 @@ export const page = defineType({
         }),
         defineArrayMember({type: 'ctaBlock'}),
       ],
-      validation: (Rule) => Rule.required().min(1),
+      // Was `Rule.required().min(1)` — relaxed Day 5 while implementing the
+      // Sanity adapter: CmsAdapter's CreatePageInput deliberately allows
+      // creating a page with `contentBlocks: []` (a brief-to-draft page
+      // before content exists), which a min(1) body would reject outright.
+      validation: (Rule) => Rule.required(),
     }),
     defineField({
       name: 'seo',

@@ -9,6 +9,7 @@ export interface PageListItem {
   status: PageStatus;
   targetKeyword: string | null;
   qualityScore: number | null;
+  metaDescription: string | null;
   faqCount: number;
   _createdAt: string;
   _updatedAt: string;
@@ -66,6 +67,21 @@ export interface PageBodyCtaBlock {
 }
 
 export type PageBodyBlock = PageBodyTextBlock | PageBodyImageBlock | PageBodyCtaBlock;
+
+// Raw shape of one row from PAGES_WITH_IMAGE_BLOCKS_QUERY — one page, its
+// imageBlock array members. `asset` is only absent if the reference is
+// broken (deleted asset); the adapter skips those rather than throwing.
+export interface PageWithImageBlocks {
+  _id: string;
+  _createdAt: string;
+  _updatedAt: string;
+  images: {
+    _key: string;
+    alt: string | null;
+    altTextStatus: AltTextStatus;
+    asset?: { _id: string; url: string };
+  }[];
+}
 
 export interface PageDetail {
   _id: string;

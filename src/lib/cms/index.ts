@@ -1,5 +1,4 @@
-// CMS adapter interface (Sanity, later WordPress) lives here. The Sanity
-// implementation satisfying CmsAdapter is not built yet — that's next.
+// CMS adapter interface (Sanity, later WordPress) lives here.
 export type { CmsAdapter } from "./adapter";
 export type {
   CreatePageInput,
@@ -8,3 +7,6 @@ export type {
   UpdateImageInput,
   UpdatePageInput,
 } from "./types";
+export { SanityAdapter } from "./sanityAdapter";
+export type { SanityQueryClient } from "./sanityAdapter";
+export { defaultSanityAdapter } from "./defaultAdapter";

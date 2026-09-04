@@ -1,17 +1,12 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { PageBody } from "@/components/PageBody";
-import { client } from "@/sanity/client";
-import { PAGE_BY_SLUG_QUERY } from "@/sanity/queries";
-import type { PageDetail } from "@/sanity/types";
+import { ContentBlocks } from "@/components/ContentBlocks";
+import { defaultSanityAdapter } from "@/lib/cms";
+import type { Page } from "@/types";
 
-async function getPage(slug: string): Promise<{ page: PageDetail | null; error: string | null }> {
+async function getPage(slug: string): Promise<{ page: Page | null; error: string | null }> {
   try {
-    const page = await client.fetch<PageDetail | null>(
-      PAGE_BY_SLUG_QUERY,
-      { slug },
-      { cache: "no-store" },
-    );
+    const page = await defaultSanityAdapter.getPage(slug);
     return { page, error: null };
   } catch (err) {
     console.error(`Failed to fetch page "${slug}" from Sanity:`, err);
@@ -45,9 +40,6 @@ export default async function PageDetailRoute({
     notFound();
   }
 
-  const metaTitle = page.seo?.metaTitle || page.title;
-  const metaDescription = page.seo?.metaDescription;
-
   return (
     <article className="mx-auto w-full max-w-2xl px-6 py-16">
       <Link href="/pages" className="text-sm text-zinc-500 hover:underline">
@@ -71,18 +63,12 @@ export default async function PageDetailRoute({
 
       <section className="mt-6 rounded-lg border border-zinc-200 p-4 text-sm dark:border-zinc-800">
         <h2 className="font-medium text-zinc-700 dark:text-zinc-300">SEO</h2>
-        {metaDescription || page.seo?.metaTitle ? (
+        {page.metaDescription ? (
           <dl className="mt-2 space-y-1 text-zinc-600 dark:text-zinc-400">
             <div>
-              <dt className="inline font-medium">Meta title: </dt>
-              <dd className="inline">{metaTitle}</dd>
+              <dt className="inline font-medium">Meta description: </dt>
+              <dd className="inline">{page.metaDescription}</dd>
             </div>
-            {metaDescription && (
-              <div>
-                <dt className="inline font-medium">Meta description: </dt>
-                <dd className="inline">{metaDescription}</dd>
-              </div>
-            )}
           </dl>
         ) : (
           <p className="mt-2 text-zinc-500 dark:text-zinc-500">No SEO fields filled in yet.</p>
@@ -90,8 +76,8 @@ export default async function PageDetailRoute({
       </section>
 
       <div className="mt-8">
-        {page.body && page.body.length > 0 ? (
-          <PageBody value={page.body} />
+        {page.contentBlocks.length > 0 ? (
+          <ContentBlocks blocks={page.contentBlocks} />
         ) : (
           <p className="text-zinc-500 dark:text-zinc-400">This page has no body content yet.</p>
         )}
@@ -99,11 +85,11 @@ export default async function PageDetailRoute({
 
       <section className="mt-12">
         <h2 className="text-xl font-semibold">FAQs</h2>
-        {page.faqItems && page.faqItems.length > 0 ? (
+        {page.faqItems.length > 0 ? (
           <dl className="mt-4 space-y-4">
             {page.faqItems.map((faq) => (
               <div
-                key={faq._key}
+                key={faq.id}
                 className="rounded-lg border border-zinc-200 p-4 dark:border-zinc-800"
               >
                 <dt className="font-medium">{faq.question}</dt>

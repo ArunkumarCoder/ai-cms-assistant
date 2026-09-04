@@ -25,8 +25,9 @@ export type PageSummary = Omit<Page, "contentBlocks" | "faqItems"> & {
 // Fields the caller can't set on create: `id`/`createdAt`/`updatedAt` are
 // bookkeeping the adapter (or the CMS) assigns; `siteId`/`cmsDocumentId` are
 // filled in by the adapter instance itself (see CmsAdapter's top comment —
-// it's already bound to one Site); `latestSeoAuditId` is written later by the
-// SEO-audit feature, never at creation. `status` defaults to "draft" when
+// it's already bound to one Site); `latestSeoAuditId` and `qualityScore` are
+// written later by the (not-yet-built) SEO-audit feature, never at creation —
+// every new page starts with no score. `status` defaults to "draft" when
 // omitted. `contentBlocks`/`faqItems` default to `[]`: a page can be created
 // from a brief before content blocks exist, and FAQs are always a later,
 // separate generation step (SPEC.md journey d).
@@ -38,6 +39,7 @@ export type CreatePageInput = Omit<
   | "createdAt"
   | "updatedAt"
   | "latestSeoAuditId"
+  | "qualityScore"
   | "status"
   | "contentBlocks"
   | "faqItems"

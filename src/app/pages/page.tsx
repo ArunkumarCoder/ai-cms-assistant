@@ -1,13 +1,12 @@
 import Link from "next/link";
-import { client } from "@/sanity/client";
-import { PAGES_LIST_QUERY } from "@/sanity/queries";
-import type { PageListItem } from "@/sanity/types";
+import { defaultSanityAdapter } from "@/lib/cms";
+import type { PageSummary } from "@/lib/cms";
 
 export const metadata = { title: "Pages" };
 
-async function getPages(): Promise<{ pages: PageListItem[] | null; error: string | null }> {
+async function getPages(): Promise<{ pages: PageSummary[] | null; error: string | null }> {
   try {
-    const pages = await client.fetch<PageListItem[]>(PAGES_LIST_QUERY, {}, { cache: "no-store" });
+    const pages = await defaultSanityAdapter.getPages();
     return { pages, error: null };
   } catch (err) {
     console.error("Failed to fetch pages from Sanity:", err);
@@ -47,7 +46,7 @@ export default async function PagesIndex() {
       {!error && pages && pages.length > 0 && (
         <ul className="mt-8 divide-y divide-zinc-200 dark:divide-zinc-800">
           {pages.map((page) => (
-            <li key={page._id} className="py-5">
+            <li key={page.id} className="py-5">
               <Link
                 href={`/pages/${page.slug}`}
                 className="flex items-start justify-between gap-4 hover:opacity-80"

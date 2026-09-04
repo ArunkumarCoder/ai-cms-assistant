@@ -17,6 +17,11 @@ export interface Page {
   contentBlocks: ContentBlock[];
   latestSeoAuditId?: string;
   faqItems: FaqItem[];
+  // Denormalized snapshot of the latest SEO/quality score (SPEC.md §4) — a
+  // real Sanity schema field the /pages UI already displayed before this
+  // field existed here. Added Day 5 while implementing the Sanity adapter:
+  // PageSummary/Page couldn't carry it at all until it was on this type.
+  qualityScore: number | null;
   createdAt: string;
   updatedAt: string;
 }

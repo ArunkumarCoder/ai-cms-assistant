@@ -39,6 +39,10 @@ yarn-error.log*
 .env*
 !.env.example
 
+# local sqlite datastore (contains password hashes + encrypted API tokens)
+/prisma/*.db
+/prisma/*.db-journal
+
 # vercel
 .vercel
 

@@ -1,0 +1,44 @@
+// App-level datastore (Day 6). Sanity remains the CMS for Page/ImageAsset
+// content; this database only holds what the app itself owns — accounts and
+// which Sanity project each account has connected — per SPEC.md §2's
+// "our own DB id" distinction that CmsAdapter's design notes already assumed
+// would exist eventually.
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  passwordHash String
+  createdAt    DateTime @default(now())
+  sites        Site[]
+}
+
+// Mirrors src/types/site.ts's `Site` interface, plus ownership (`userId`) and
+// the encrypted credential the domain type deliberately never carries (see
+// src/lib/crypto/siteToken.ts) — CmsAdapter and the rest of the app only ever
+// see the plain `Site` shape, never this row directly.
+model Site {
+  id                    String   @id @default(cuid())
+  userId                String
+  user                  User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name                  String
+  cms                   String   @default("sanity")
+  sanityProjectId       String
+  sanityDataset         String
+  // Ciphertext only — see src/lib/crypto/siteToken.ts for the encrypt/decrypt
+  // pair. Nullable because a connected project could in principle be
+  // read-only/public with no token (SanityAdapter already supports that),
+  // even though today's connect flow always asks for one.
+  sanityTokenCiphertext String?
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  @@index([userId])
+}

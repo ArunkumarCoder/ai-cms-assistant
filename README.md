@@ -6,7 +6,7 @@ See [SPEC.md](./SPEC.md) for the full product spec, data model, and AI call/prov
 
 ## Status
 
-Day 1: spec + scaffold. Day 2: Sanity project, schema, and Studio (`studio/`) are live with sample content. Day 3: `/pages` and `/pages/[slug]` read live from Sanity end to end (no caching — see SPEC.md). No AI integration code yet — that's next.
+Day 1: spec + scaffold. Day 2: Sanity project, schema, and Studio (`studio/`) are live with sample content. Day 3: `/pages` and `/pages/[slug]` read live from Sanity end to end (no caching — see SPEC.md). Day 4–5: a CMS-agnostic `CmsAdapter` interface and its Sanity implementation, tested, with real (unexercised) write support. Day 6: real accounts (NextAuth/Auth.js, email+password) and a per-user "connect a Sanity project" flow — `/pages` now resolves each user's own connected project instead of one hardcoded `.env` project. No AI integration code yet — that's next.
 
 ## Stack
 
@@ -15,17 +15,30 @@ Day 1: spec + scaffold. Day 2: Sanity project, schema, and Studio (`studio/`) ar
 - ESLint (`eslint-config-next`) + Prettier, configured to not conflict
 - CMS: [Sanity](https://www.sanity.io) (first), WordPress (stretch goal)
 - AI providers: OpenAI, Anthropic (Claude), Groq — behind a single adapter interface in `src/lib/ai`
+- Auth: [NextAuth (Auth.js v5)](https://authjs.dev), Credentials (email/password) — see SPEC.md §8
+- App datastore: [Prisma](https://www.prisma.io) + SQLite (accounts + connected Sanity projects)
 
 ## Getting started
 
 ```bash
 npm install
+cp .env.example .env.local
+```
+
+Fill in `.env.local`:
+
+- `NEXT_PUBLIC_SANITY_PROJECT_ID`/`NEXT_PUBLIC_SANITY_DATASET` — already point at this project's demo dataset by default.
+- `AUTH_SECRET` and `SITE_TOKEN_ENCRYPTION_KEY` — generate each with `openssl rand -base64 32`.
+- `DATABASE_URL="file:./dev.db"` — also copy this one line into a root `.env` (the Prisma CLI doesn't read `.env.local`).
+
+Then set up the local database and start the app:
+
+```bash
+npx prisma migrate dev
 npm run dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000).
-
-Copy `.env.example` to `.env.local` and fill in your own keys before wiring up CMS/AI integrations.
+Open [http://localhost:3000](http://localhost:3000), sign up for an account, and connect a Sanity project (your own, or the demo project ID/dataset above — you'll still need a real API token from that project's manage.sanity.io → API → Tokens).
 
 ## Scripts
 
@@ -42,9 +55,12 @@ Copy `.env.example` to `.env.local` and fill in your own keys before wiring up C
 src/
   app/    # Next.js App Router routes
   lib/
-    cms/  # CMS adapter interface (Sanity now, WordPress later)
+    cms/  # CMS adapter interface (Sanity now, WordPress later) + per-user resolution
     ai/   # Provider-agnostic AI adapter interface (OpenAI, Claude, Groq)
+    auth/ # Auth.js config, Server Actions, password hashing, session DAL
+    crypto/ # Encryption for stored third-party credentials (Sanity API tokens)
   types/  # Domain model (Site, Page, ContentBlock, SeoAudit, FaqItem, ImageAsset)
+prisma/   # User/Site schema + migrations (accounts, connected Sanity projects)
 studio/   # Standalone Sanity Studio (its own app — see SPEC.md for why)
 ```
 

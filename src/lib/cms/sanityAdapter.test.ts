@@ -1,6 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
 import type { Site } from "@/types";
-import type { PageDetail, PageListItem, PageWithImageBlocks } from "@/sanity/types";
+import type {
+  PageDetail,
+  PageListItem,
+  PageWithImageBlocks,
+} from "@/sanity/types";
 import {
   contentBlocksToPortableText,
   portableTextToContentBlocks,
@@ -11,6 +15,7 @@ import type { CreatePageInput, UpdatePageInput } from "./types";
 
 const site: Site = {
   id: "site-1",
+  userId: "user-1",
   name: "Test Site",
   cms: "sanity",
   sanityProjectId: "proj",
@@ -19,7 +24,9 @@ const site: Site = {
   updatedAt: "2026-01-01T00:00:00.000Z",
 };
 
-function makeClient(overrides: Partial<SanityQueryClient> = {}): SanityQueryClient {
+function makeClient(
+  overrides: Partial<SanityQueryClient> = {},
+): SanityQueryClient {
   return {
     fetch: vi.fn().mockRejectedValue(new Error("fetch not mocked")),
     create: vi.fn().mockRejectedValue(new Error("create not mocked")),
@@ -39,7 +46,9 @@ const samplePageDetail: PageDetail = {
   targetKeyword: "widgets",
   qualityScore: 88,
   seo: { metaTitle: "Widgets", metaDescription: "Buy widgets here." },
-  faqItems: [{ _key: "faq-1", question: "Q1?", answer: "A1.", source: "manual" }],
+  faqItems: [
+    { _key: "faq-1", question: "Q1?", answer: "A1.", source: "manual" },
+  ],
   body: [
     {
       _type: "block",
@@ -105,16 +114,31 @@ describe("SanityAdapter.getPage", () => {
   });
 
   it("translates Portable Text body into ContentBlock[]", async () => {
-    const client = makeClient({ fetch: vi.fn().mockResolvedValue(samplePageDetail) });
+    const client = makeClient({
+      fetch: vi.fn().mockResolvedValue(samplePageDetail),
+    });
     const adapter = new SanityAdapter(site, client);
 
     const page = await adapter.getPage("landing-page");
 
     expect(page?.contentBlocks).toEqual([
-      { id: "block-1", type: "heading", order: 0, content: "Welcome", metadata: { level: 2 } },
+      {
+        id: "block-1",
+        type: "heading",
+        order: 0,
+        content: "Welcome",
+        metadata: { level: 2 },
+      },
     ]);
     expect(page?.faqItems).toEqual([
-      { id: "faq-1", pageId: "page-1", question: "Q1?", answer: "A1.", order: 0, source: "manual" },
+      {
+        id: "faq-1",
+        pageId: "page-1",
+        question: "Q1?",
+        answer: "A1.",
+        order: 0,
+        source: "manual",
+      },
     ]);
     expect(page?.qualityScore).toBe(88);
   });
@@ -133,7 +157,9 @@ describe("SanityAdapter.createPage", () => {
 
   it("sends a translated document to Sanity and returns the re-fetched page", async () => {
     const create = vi.fn().mockResolvedValue({ _id: "page-2" });
-    const fetch = vi.fn().mockResolvedValue({ ...samplePageDetail, _id: "page-2" });
+    const fetch = vi
+      .fn()
+      .mockResolvedValue({ ...samplePageDetail, _id: "page-2" });
     const adapter = new SanityAdapter(site, makeClient({ create, fetch }));
 
     const page = await adapter.createPage(validInput);
@@ -160,16 +186,22 @@ describe("SanityAdapter.createPage", () => {
   });
 
   it("propagates a mutation rejected by Sanity instead of swallowing it", async () => {
-    const create = vi.fn().mockRejectedValue(new Error("Insufficient permissions"));
+    const create = vi
+      .fn()
+      .mockRejectedValue(new Error("Insufficient permissions"));
     const adapter = new SanityAdapter(site, makeClient({ create }));
 
-    await expect(adapter.createPage(validInput)).rejects.toThrow("Insufficient permissions");
+    await expect(adapter.createPage(validInput)).rejects.toThrow(
+      "Insufficient permissions",
+    );
   });
 });
 
 describe("SanityAdapter.updatePage", () => {
   it("patches only the provided fields and returns the re-fetched page", async () => {
-    const setMock = vi.fn(() => ({ commit: vi.fn().mockResolvedValue(undefined) }));
+    const setMock = vi.fn(() => ({
+      commit: vi.fn().mockResolvedValue(undefined),
+    }));
     const patch = vi.fn(() => ({ set: setMock }));
     const fetch = vi.fn().mockResolvedValue(samplePageDetail);
     const adapter = new SanityAdapter(site, makeClient({ patch, fetch }));
@@ -194,7 +226,10 @@ describe("SanityAdapter.listImages / updateImage", () => {
           _key: "img-1",
           alt: "",
           altTextStatus: "missing",
-          asset: { _id: "asset-1", url: "https://cdn.sanity.io/images/proj/production/asset-1.jpg" },
+          asset: {
+            _id: "asset-1",
+            url: "https://cdn.sanity.io/images/proj/production/asset-1.jpg",
+          },
         },
       ],
     },
@@ -258,7 +293,13 @@ describe("content block <-> Portable Text translation", () => {
     ]);
 
     expect(blocks).toEqual([
-      { id: "p1", type: "paragraph", order: 0, content: "Hello.", metadata: undefined },
+      {
+        id: "p1",
+        type: "paragraph",
+        order: 0,
+        content: "Hello.",
+        metadata: undefined,
+      },
       {
         id: "c1",
         type: "cta",
@@ -283,8 +324,16 @@ describe("content block <-> Portable Text translation", () => {
     ]);
 
     const back = contentBlocksToPortableText(blocks);
-    expect(back[0]).toMatchObject({ _type: "block", style: "normal", _key: "p1" });
-    expect(back[1]).toMatchObject({ _type: "ctaBlock", href: "https://example.com", _key: "c1" });
+    expect(back[0]).toMatchObject({
+      _type: "block",
+      style: "normal",
+      _key: "p1",
+    });
+    expect(back[1]).toMatchObject({
+      _type: "ctaBlock",
+      href: "https://example.com",
+      _key: "c1",
+    });
     expect(back[2]).toMatchObject({
       _type: "imageBlock",
       _key: "i1",

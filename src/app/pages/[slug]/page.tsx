@@ -1,16 +1,26 @@
 import Link from "next/link";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { ContentBlocks } from "@/components/ContentBlocks";
-import { defaultSanityAdapter } from "@/lib/cms";
+import { getAdapterForCurrentUser, NoSiteConnectedError } from "@/lib/cms";
+import { requireUser } from "@/lib/auth/dal";
 import type { Page } from "@/types";
 
-async function getPage(slug: string): Promise<{ page: Page | null; error: string | null }> {
+async function getPage(
+  slug: string,
+): Promise<{ page: Page | null; error: string | null }> {
   try {
-    const page = await defaultSanityAdapter.getPage(slug);
+    const adapter = await getAdapterForCurrentUser();
+    const page = await adapter.getPage(slug);
     return { page, error: null };
   } catch (err) {
+    if (err instanceof NoSiteConnectedError) {
+      redirect("/sites/connect");
+    }
     console.error(`Failed to fetch page "${slug}" from Sanity:`, err);
-    return { page: null, error: err instanceof Error ? err.message : "Unknown error" };
+    return {
+      page: null,
+      error: err instanceof Error ? err.message : "Unknown error",
+    };
   }
 }
 
@@ -19,6 +29,7 @@ export default async function PageDetailRoute({
 }: {
   params: Promise<{ slug: string }>;
 }) {
+  await requireUser();
   const { slug } = await params;
   const { page, error } = await getPage(slug);
 
@@ -29,7 +40,9 @@ export default async function PageDetailRoute({
           ← Back to pages
         </Link>
         <div className="mt-6 rounded-lg border border-red-200 bg-red-50 p-4 text-red-800 dark:border-red-900/50 dark:bg-red-950/40 dark:text-red-300">
-          <p className="font-medium">Couldn&apos;t load this page from Sanity.</p>
+          <p className="font-medium">
+            Couldn&apos;t load this page from Sanity.
+          </p>
           <p className="mt-1 text-sm opacity-80">{error}</p>
         </div>
       </div>
@@ -71,7 +84,9 @@ export default async function PageDetailRoute({
             </div>
           </dl>
         ) : (
-          <p className="mt-2 text-zinc-500 dark:text-zinc-500">No SEO fields filled in yet.</p>
+          <p className="mt-2 text-zinc-500 dark:text-zinc-500">
+            No SEO fields filled in yet.
+          </p>
         )}
       </section>
 
@@ -79,7 +94,9 @@ export default async function PageDetailRoute({
         {page.contentBlocks.length > 0 ? (
           <ContentBlocks blocks={page.contentBlocks} />
         ) : (
-          <p className="text-zinc-500 dark:text-zinc-400">This page has no body content yet.</p>
+          <p className="text-zinc-500 dark:text-zinc-400">
+            This page has no body content yet.
+          </p>
         )}
       </div>
 
@@ -93,7 +110,9 @@ export default async function PageDetailRoute({
                 className="rounded-lg border border-zinc-200 p-4 dark:border-zinc-800"
               >
                 <dt className="font-medium">{faq.question}</dt>
-                <dd className="mt-1 text-zinc-600 dark:text-zinc-400">{faq.answer}</dd>
+                <dd className="mt-1 text-zinc-600 dark:text-zinc-400">
+                  {faq.answer}
+                </dd>
                 {faq.source === "ai-generated" && (
                   <p className="mt-2 text-xs text-zinc-400">AI-generated</p>
                 )}

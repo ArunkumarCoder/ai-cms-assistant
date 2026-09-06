@@ -9,4 +9,8 @@ export type {
 } from "./types";
 export { SanityAdapter } from "./sanityAdapter";
 export type { SanityQueryClient } from "./sanityAdapter";
-export { defaultSanityAdapter } from "./defaultAdapter";
+export {
+  getAdapterForCurrentUser,
+  NoSiteConnectedError,
+  NotAuthenticatedError,
+} from "./resolveAdapter";

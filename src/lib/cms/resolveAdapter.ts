@@ -3,17 +3,15 @@ import { createClient } from "next-sanity";
 import type { Site as PrismaSite } from "@prisma/client";
 import { apiVersion } from "@/sanity/apiVersion";
 import { decryptSiteToken } from "@/lib/crypto/siteToken";
-import { prisma } from "@/lib/db";
 import { auth } from "@/auth";
+import { getUserSites, resolveActiveSite } from "@/lib/sites/activeSite";
 import type { Site } from "@/types";
 import { SanityAdapter } from "./sanityAdapter";
 
 // Day 6 replacement for the old defaultAdapter.ts singleton: one hardcoded
-// Site (from env) becomes "whichever Site the logged-in user connected."
-// There's no site-switcher yet (tomorrow's work per today's brief), so a
-// user with multiple connected Sites just gets their oldest one — good
-// enough until that UI exists, and the schema already supports more than one
-// per user without changes.
+// Site (from env) becomes "whichever Site the logged-in user connected." Day
+// 7 added a real switcher (src/lib/sites/activeSite.ts), which this now
+// defers to instead of always picking the oldest Site.
 export class NoSiteConnectedError extends Error {
   constructor() {
     super("No Sanity project connected for this account yet.");
@@ -35,10 +33,8 @@ export async function getAdapterForCurrentUser(): Promise<SanityAdapter> {
     throw new NotAuthenticatedError();
   }
 
-  const site = await prisma.site.findFirst({
-    where: { userId },
-    orderBy: { createdAt: "asc" },
-  });
+  const sites = await getUserSites(userId);
+  const site = await resolveActiveSite(sites);
   if (!site) {
     throw new NoSiteConnectedError();
   }

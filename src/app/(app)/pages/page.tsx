@@ -1,15 +1,12 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { getAdapterForCurrentUser, NoSiteConnectedError } from "@/lib/cms";
 import type { PageSummary } from "@/lib/cms";
-import { requireUser } from "@/lib/auth/dal";
-import { logoutAction } from "@/lib/auth/actions";
 
 export const metadata = { title: "Pages" };
 
 type PagesResult =
-  | { kind: "ok"; pages: PageSummary[] }
-  | { kind: "no-site" }
-  | { kind: "error"; message: string };
+  { kind: "ok"; pages: PageSummary[] } | { kind: "error"; message: string };
 
 async function getPages(): Promise<PagesResult> {
   try {
@@ -17,7 +14,7 @@ async function getPages(): Promise<PagesResult> {
     return { kind: "ok", pages: await adapter.getPages() };
   } catch (err) {
     if (err instanceof NoSiteConnectedError) {
-      return { kind: "no-site" };
+      redirect("/sites");
     }
     console.error("Failed to fetch pages from Sanity:", err);
     return {
@@ -36,41 +33,16 @@ const STATUS_STYLES: Record<string, string> = {
 };
 
 export default async function PagesIndex() {
-  const user = await requireUser();
   const result = await getPages();
 
   return (
     <div className="mx-auto w-full max-w-3xl px-6 py-16">
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <h1 className="text-3xl font-semibold tracking-tight">Pages</h1>
-          <p className="mt-2 text-zinc-600 dark:text-zinc-400">
-            Live from Sanity — project content, not mock data.
-          </p>
-        </div>
-        <div className="flex shrink-0 items-center gap-4 pt-1 text-sm">
-          <span className="text-zinc-500 dark:text-zinc-400">{user.email}</span>
-          <form action={logoutAction}>
-            <button type="submit" className="underline hover:opacity-80">
-              Log out
-            </button>
-          </form>
-        </div>
+      <div>
+        <h1 className="text-3xl font-semibold tracking-tight">Pages</h1>
+        <p className="mt-2 text-zinc-600 dark:text-zinc-400">
+          Live from Sanity — project content, not mock data.
+        </p>
       </div>
-
-      {result.kind === "no-site" && (
-        <div className="mt-8 rounded-lg border border-dashed border-zinc-300 p-8 text-center dark:border-zinc-700">
-          <p className="text-zinc-600 dark:text-zinc-400">
-            No Sanity project connected to your account yet.
-          </p>
-          <Link
-            href="/sites/connect"
-            className="mt-4 inline-block rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white dark:bg-white dark:text-zinc-900"
-          >
-            Connect a Sanity project
-          </Link>
-        </div>
-      )}
 
       {result.kind === "error" && (
         <div className="mt-8 rounded-lg border border-red-200 bg-red-50 p-4 text-red-800 dark:border-red-900/50 dark:bg-red-950/40 dark:text-red-300">

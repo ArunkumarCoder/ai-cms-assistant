@@ -2,7 +2,6 @@ import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { ContentBlocks } from "@/components/ContentBlocks";
 import { getAdapterForCurrentUser, NoSiteConnectedError } from "@/lib/cms";
-import { requireUser } from "@/lib/auth/dal";
 import type { Page } from "@/types";
 
 async function getPage(
@@ -14,7 +13,7 @@ async function getPage(
     return { page, error: null };
   } catch (err) {
     if (err instanceof NoSiteConnectedError) {
-      redirect("/sites/connect");
+      redirect("/sites");
     }
     console.error(`Failed to fetch page "${slug}" from Sanity:`, err);
     return {
@@ -29,7 +28,6 @@ export default async function PageDetailRoute({
 }: {
   params: Promise<{ slug: string }>;
 }) {
-  await requireUser();
   const { slug } = await params;
   const { page, error } = await getPage(slug);
 

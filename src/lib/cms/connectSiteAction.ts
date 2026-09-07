@@ -7,6 +7,7 @@ import { apiVersion } from "@/sanity/apiVersion";
 import { encryptSiteToken } from "@/lib/crypto/siteToken";
 import { requireUser } from "@/lib/auth/dal";
 import { prisma } from "@/lib/db";
+import { setActiveSiteCookie } from "@/lib/sites/activeSite";
 import { SanityAdapter } from "./sanityAdapter";
 
 export type ConnectSiteState = { error?: string } | undefined;
@@ -75,7 +76,7 @@ export async function connectSiteAction(
     };
   }
 
-  await prisma.site.create({
+  const created = await prisma.site.create({
     data: {
       userId: user.id,
       name,
@@ -85,6 +86,12 @@ export async function connectSiteAction(
       sanityTokenCiphertext: encryptSiteToken(token),
     },
   });
+
+  // A user who just connected a site almost certainly wants to see it, not
+  // whichever Site was active before (or the oldest one, if this is their
+  // first) — so make it active immediately rather than leaving that to a
+  // separate "Make active" click.
+  await setActiveSiteCookie(created.id);
 
   redirect("/pages");
 }

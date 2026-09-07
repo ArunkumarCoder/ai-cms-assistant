@@ -25,6 +25,11 @@ vi.mock("@/lib/db", () => ({
   prisma: { site: { create: (...args: unknown[]) => siteCreateMock(...args) } },
 }));
 
+const setActiveSiteCookieMock = vi.fn();
+vi.mock("@/lib/sites/activeSite", () => ({
+  setActiveSiteCookie: (...args: unknown[]) => setActiveSiteCookieMock(...args),
+}));
+
 vi.mock("next/navigation", () => ({
   redirect: (url: string) => {
     throw new Error(`REDIRECT:${url}`);
@@ -49,8 +54,9 @@ describe("connectSiteAction", () => {
     });
   });
 
-  it("validates via a real adapter call, then encrypts the token and persists before redirecting", async () => {
+  it("validates via a real adapter call, then encrypts the token, persists, marks it active, and redirects", async () => {
     getPagesMock.mockResolvedValue([]);
+    siteCreateMock.mockResolvedValue({ id: "site-1" });
 
     await expect(
       connectSiteAction(
@@ -71,6 +77,8 @@ describe("connectSiteAction", () => {
     expect(data.userId).toBe("user-1");
     expect(data.sanityProjectId).toBe("abc123");
     expect(data.sanityTokenCiphertext).not.toContain("sk_real_token_value");
+
+    expect(setActiveSiteCookieMock).toHaveBeenCalledWith("site-1");
   });
 
   it("does not persist a Site when the validation call fails", async () => {

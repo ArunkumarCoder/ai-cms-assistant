@@ -1,5 +1,6 @@
 import { logoutAction } from "@/lib/auth/actions";
 import { SiteSwitcher } from "./SiteSwitcher";
+import { SubmitButton } from "./SubmitButton";
 
 export function TopBar({
   userEmail,
@@ -20,9 +21,9 @@ export function TopBar({
       <div className="flex items-center gap-4 text-sm">
         <span className="text-zinc-500 dark:text-zinc-400">{userEmail}</span>
         <form action={logoutAction}>
-          <button type="submit" className="underline hover:opacity-80">
+          <SubmitButton pendingLabel="Logging out…" className="underline hover:opacity-80">
             Log out
-          </button>
+          </SubmitButton>
         </form>
       </div>
     </header>

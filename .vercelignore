@@ -1,0 +1,13 @@
+# The Sanity Studio is a separate, standalone app (its own package.json/
+# node_modules, deployed independently via `sanity deploy` if at all) — it
+# has nothing to do with this Next.js app's runtime. Vercel's zero-config
+# build otherwise notices its package.json and tries to resolve its
+# dependency tree too, which fails on an unrelated peer-dependency conflict
+# in the Studio's own toolchain.
+studio
+
+# Real config lives in Vercel's own env var UI/CLI (see .env.example for the
+# full list) — these local files should never ride along in an uploaded
+# deployment even though .gitignore already keeps them out of git itself.
+.env
+.env.local

@@ -1,6 +1,7 @@
 "use server";
 
 import { AuthError } from "next-auth";
+import { Prisma } from "@prisma/client";
 import * as z from "zod";
 import { signIn, signOut } from "@/auth";
 import { prisma } from "@/lib/db";
@@ -33,9 +34,23 @@ export async function signupAction(
     return { error: "An account with that email already exists." };
   }
 
-  await prisma.user.create({
-    data: { email, passwordHash: await hashPassword(password) },
-  });
+  try {
+    await prisma.user.create({
+      data: { email, passwordHash: await hashPassword(password) },
+    });
+  } catch (err) {
+    // Two signups for the same email racing past the findUnique check above
+    // both fail here instead of one silently overwriting the other — the
+    // unique constraint on User.email is the real guard, the check above is
+    // just to give the common case a nicer message before hitting the DB.
+    if (
+      err instanceof Prisma.PrismaClientKnownRequestError &&
+      err.code === "P2002"
+    ) {
+      return { error: "An account with that email already exists." };
+    }
+    throw err;
+  }
 
   // signIn() redirects on success by throwing Next's internal NEXT_REDIRECT
   // signal — that must propagate, not get swallowed here.

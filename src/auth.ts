@@ -15,6 +15,11 @@ import { verifyPassword } from "@/lib/auth/password";
 export const { handlers, auth, signIn, signOut } = NextAuth({
   session: { strategy: "jwt" },
   pages: { signIn: "/login" },
+  // Auth.js only auto-trusts the request's Host header on a few platforms it
+  // detects by env var; without this it throws "UntrustedHost" everywhere
+  // else (a plain `next start`, this project's staging deploy, etc.) even
+  // though the request only ever tells it its own real host.
+  trustHost: true,
   providers: [
     Credentials({
       credentials: {

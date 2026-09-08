@@ -2,6 +2,7 @@ import Link from "next/link";
 import { requireUser } from "@/lib/auth/dal";
 import { getUserSites, resolveActiveSite } from "@/lib/sites/activeSite";
 import { setActiveSiteAction } from "@/lib/sites/actions";
+import { SubmitButton } from "@/components/SubmitButton";
 
 export const metadata = { title: "Sites" };
 
@@ -65,12 +66,12 @@ export default async function SitesPage() {
                   <form action={setActiveSiteAction}>
                     <input type="hidden" name="siteId" value={site.id} />
                     <input type="hidden" name="redirectTo" value="/sites" />
-                    <button
-                      type="submit"
+                    <SubmitButton
+                      pendingLabel="Switching…"
                       className="shrink-0 rounded-lg border border-zinc-300 px-3 py-1.5 text-sm font-medium hover:bg-zinc-50 dark:border-zinc-700 dark:hover:bg-zinc-900"
                     >
                       Make active
-                    </button>
+                    </SubmitButton>
                   </form>
                 )}
               </li>

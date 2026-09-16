@@ -42,3 +42,32 @@ model Site {
 
   @@index([userId])
 }
+
+// One row per AI call (src/lib/ai/logging.ts), success or failure — the
+// foundation for the Phase 5 cost dashboard (Phase 2 Day 1). `callType` and
+// `provider` are plain strings, not enum/relation types: the AI layer's own
+// `AiCallType`/`AiProviderName` (src/lib/ai/types.ts) are the source of
+// truth for valid values, and a Prisma enum would mean a migration every
+// time a new AI feature/provider is added. `siteId`/`userId` are nullable,
+// unenforced foreign keys (not `@relation`) rather than Cascade-linked to
+// User/Site: a deleted Site/User shouldn't silently delete its historical
+// cost data out from under a spend dashboard.
+model AiCallLog {
+  id               String   @id @default(cuid())
+  callType         String
+  provider         String
+  model            String
+  inputTokens      Int
+  outputTokens     Int
+  estimatedCostUsd Float
+  durationMs       Int
+  success          Boolean
+  errorMessage     String?
+  siteId           String?
+  userId           String?
+  createdAt        DateTime @default(now())
+
+  @@index([callType])
+  @@index([siteId])
+  @@index([createdAt])
+}

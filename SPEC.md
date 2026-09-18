@@ -152,16 +152,16 @@ The model is designed so no field name assumes Sanity. `Page.cmsDocumentId` woul
 
 **Routing rule of thumb:** Groq for text-only calls (fastest/cheapest for dev-time iteration); OpenAI or Claude for the vision call (alt text), since Groq's vision support isn't guaranteed across its hosted models. All pricing below is a rough estimate as of this writing — **verify against each provider's current pricing page before using these numbers in anything final** (a case study, a client proposal, etc.).
 
-| #   | Call                                      | Purpose                                                    | Vision? | Est. input / output tokens | Default provider     | Est. cost/call     |
-| --- | ----------------------------------------- | ---------------------------------------------------------- | ------- | -------------------------- | -------------------- | ------------------ |
-| 1   | Page generation                           | Draft title, meta description, content blocks from a brief | No      | ~500 in / ~1,200 out       | Groq (Llama 3.3 70B) | ~$0.0006           |
-| 2   | Single-block regeneration                 | Regenerate one block (heading/paragraph/CTA)               | No      | ~300 in / ~250 out         | Groq (Llama 3.3 70B) | ~$0.0001           |
-| 3   | SEO scoring & suggestions                 | Analyze page text, produce score + suggestions             | No      | ~1,500 in / ~600 out       | Groq (Llama 3.3 70B) | ~$0.0005           |
-| 4   | Alt text generation (single)              | Describe one image for accessibility/SEO                   | **Yes** | ~300 in (+image) / ~60 out | OpenAI (GPT-4o-mini) | ~$0.006            |
-| 5   | Alt text generation (batch)               | Same as #4, looped per image                               | **Yes** | same per image as #4       | OpenAI (GPT-4o-mini) | ~$0.006 × N images |
-| 6   | FAQ generation                            | Produce 3–8 Q&A pairs from page content                    | No      | ~1,200 in / ~700 out       | Groq (Llama 3.3 70B) | ~$0.0006           |
-| 7   | FAQ schema (JSON-LD) formatting           | Convert FAQ items into valid FAQPage schema                | No      | ~500 in / ~400 out         | Groq (Llama 3.3 70B) | ~$0.0003           |
-| 8   | Content quality scoring (optional/future) | Tone/readability check before publish                      | No      | ~1,200 in / ~300 out       | Groq (Llama 3.3 70B) | ~$0.0003           |
+| #   | Call                                      | Purpose                                                    | Vision? | Est. input / output tokens | Default provider     | Est. cost/call     | Schema                                                          |
+| --- | ----------------------------------------- | ---------------------------------------------------------- | ------- | -------------------------- | -------------------- | ------------------ | --------------------------------------------------------------- |
+| 1   | Page generation                           | Draft title, meta description, content blocks from a brief | No      | ~500 in / ~1,200 out       | Groq (Llama 3.3 70B) | ~$0.0006           | `pageDraftSchema` (`src/lib/ai/schemas/pageDraft.ts`)           |
+| 2   | Single-block regeneration                 | Regenerate one block (heading/paragraph/CTA)               | No      | ~300 in / ~250 out         | Groq (Llama 3.3 70B) | ~$0.0001           | _not yet defined_ — see note below                              |
+| 3   | SEO scoring & suggestions                 | Analyze page text, produce score + suggestions             | No      | ~1,500 in / ~600 out       | Groq (Llama 3.3 70B) | ~$0.0005           | `seoSuggestionsSchema` (`src/lib/ai/schemas/seoSuggestions.ts`) |
+| 4   | Alt text generation (single)              | Describe one image for accessibility/SEO                   | **Yes** | ~300 in (+image) / ~60 out | OpenAI (GPT-4o-mini) | ~$0.006            | `altTextSchema` (`src/lib/ai/schemas/altText.ts`)               |
+| 5   | Alt text generation (batch)               | Same as #4, looped per image                               | **Yes** | same per image as #4       | OpenAI (GPT-4o-mini) | ~$0.006 × N images | same as #4, called once per image                               |
+| 6   | FAQ generation                            | Produce 3–8 Q&A pairs from page content                    | No      | ~1,200 in / ~700 out       | Groq (Llama 3.3 70B) | ~$0.0006           | `faqListSchema` (`src/lib/ai/schemas/faqList.ts`)               |
+| 7   | FAQ schema (JSON-LD) formatting           | Convert FAQ items into valid FAQPage schema                | No      | ~500 in / ~400 out         | Groq (Llama 3.3 70B) | ~$0.0003           | _not yet defined_ — see note below                              |
+| 8   | Content quality scoring (optional/future) | Tone/readability check before publish                      | No      | ~1,200 in / ~300 out       | Groq (Llama 3.3 70B) | ~$0.0003           | `qualityScoreSchema` (`src/lib/ai/schemas/qualityScore.ts`)     |
 
 Notes:
 
@@ -183,6 +183,14 @@ Assumptions: each page gets one full generation (#1), one SEO audit (#3), one FA
 | **Total**             |       |           | **≈ $0.30** |
 
 Even doubling every estimate for safety margin, a full 15-page demo site is well under $1 in AI spend under this routing — the alt-text vision calls dominate the cost, which is expected and is the reason the routing rule keeps vision on a paid frontier model while everything else runs on cheap/fast Groq. **Reverify all per-token rates before quoting this number in a case study.**
+
+### Structured-output schemas
+
+Every AI-produced shape a feature will consume is defined once, in `src/lib/ai/schemas/`, as a Zod schema — matching the interface's own design intent (`adapter.ts`'s top comment: `generateStructured`'s `schema` parameter is plain JSON Schema, not Zod, specifically so Zod schemas can live one layer above it and get converted at the call site). Each file exports the Zod schema itself (for validating a response), a `z.infer`-derived TS type, and a `z.toJSONSchema()`-derived JSON Schema constant (what actually gets passed into `aiClient.generateStructured`/`generateWithVision`). No provider gets its own copy of a schema — translation into that provider's own function-calling format (OpenAI's `response_format.json_schema`, Anthropic's forced tool-use `input_schema`, Groq's prompt-embedded `json_object` instruction) already happens generically inside each `AiProvider` implementation (`src/lib/ai/providers/`), since all three already accept the same plain JSON Schema object — nothing provider-specific needed to change to support this.
+
+Each schema mirrors the domain type (`src/types/`) it's closest to, minus fields the AI doesn't generate (bookkeeping ids, `order`/array position, user-driven state like `SeoAuditSuggestion.applied`) — see each schema file's own top comment for its specific omissions/additions, including two real gaps this surfaced in the domain model: `SeoAudit` has no field yet for a rewritten meta title/description or keyword gaps (`seoSuggestions.ts`), and alt text's `confidence`/`needsReview` has no equivalent on `ImageAsset` at all (`altText.ts`) — both flagged there rather than silently added to `suggestions` as unstructured text or dropped.
+
+**Not yet covered:** call #2 (single-block regeneration) and call #7 (FAQ schema/JSON-LD formatting) have no schema yet — regeneration likely reuses `pageDraft.ts`'s `pageDraftBlockSchema` wrapped in an object once that feature is built, rather than a new file. Flagged in the table above, not silently absent.
 
 ---
 

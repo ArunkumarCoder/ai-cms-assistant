@@ -8,10 +8,9 @@
 // shape omits/adds fields relative to the domain type (`src/types/`) it's
 // closest to.
 //
-// Not yet covered: call #2 (single-block regeneration — likely reuses
-// pageDraft.ts's `pageDraftBlockSchema` wrapped in an object once that
-// feature is built) and call #7 (FAQ schema/JSON-LD formatting). Flagged
-// here rather than silently absent — see SPEC.md §3's table.
+// Not yet covered: call #7 (FAQ schema/JSON-LD formatting). Flagged here
+// rather than silently absent — see SPEC.md §3's table. Call #2 (single-block
+// regeneration) is now covered by ./blockRegeneration.ts.
 export {
   pageDraftBlockSchema,
   pageDraftJsonSchema,
@@ -19,6 +18,11 @@ export {
   type PageDraft,
   type PageDraftBlock,
 } from "./pageDraft";
+export {
+  blockRegenerationJsonSchema,
+  blockRegenerationSchema,
+  type BlockRegeneration,
+} from "./blockRegeneration";
 export {
   seoBreakdownSchema,
   seoSuggestionSchema,

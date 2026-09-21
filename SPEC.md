@@ -155,7 +155,7 @@ The model is designed so no field name assumes Sanity. `Page.cmsDocumentId` woul
 | #   | Call                                      | Purpose                                                    | Vision? | Est. input / output tokens | Default provider     | Est. cost/call     | Schema                                                          |
 | --- | ----------------------------------------- | ---------------------------------------------------------- | ------- | -------------------------- | -------------------- | ------------------ | --------------------------------------------------------------- |
 | 1   | Page generation                           | Draft title, meta description, content blocks from a brief | No      | ~500 in / ~1,200 out       | Groq (Llama 3.3 70B) | ~$0.0006           | `pageDraftSchema` (`src/lib/ai/schemas/pageDraft.ts`)           |
-| 2   | Single-block regeneration                 | Regenerate one block (heading/paragraph/CTA)               | No      | ~300 in / ~250 out         | Groq (Llama 3.3 70B) | ~$0.0001           | _not yet defined_ — see note below                              |
+| 2   | Single-block regeneration                 | Regenerate one block (heading/paragraph/CTA)               | No      | ~300 in / ~250 out         | Groq (Llama 3.3 70B) | ~$0.0001           | `blockRegenerationSchema` (`src/lib/ai/schemas/blockRegeneration.ts`) |
 | 3   | SEO scoring & suggestions                 | Analyze page text, produce score + suggestions             | No      | ~1,500 in / ~600 out       | Groq (Llama 3.3 70B) | ~$0.0005           | `seoSuggestionsSchema` (`src/lib/ai/schemas/seoSuggestions.ts`) |
 | 4   | Alt text generation (single)              | Describe one image for accessibility/SEO                   | **Yes** | ~300 in (+image) / ~60 out | OpenAI (GPT-4o-mini) | ~$0.006            | `altTextSchema` (`src/lib/ai/schemas/altText.ts`)               |
 | 5   | Alt text generation (batch)               | Same as #4, looped per image                               | **Yes** | same per image as #4       | OpenAI (GPT-4o-mini) | ~$0.006 × N images | same as #4, called once per image                               |
@@ -190,7 +190,7 @@ Every AI-produced shape a feature will consume is defined once, in `src/lib/ai/s
 
 Each schema mirrors the domain type (`src/types/`) it's closest to, minus fields the AI doesn't generate (bookkeeping ids, `order`/array position, user-driven state like `SeoAuditSuggestion.applied`) — see each schema file's own top comment for its specific omissions/additions, including two real gaps this surfaced in the domain model: `SeoAudit` has no field yet for a rewritten meta title/description or keyword gaps (`seoSuggestions.ts`), and alt text's `confidence`/`needsReview` has no equivalent on `ImageAsset` at all (`altText.ts`) — both flagged there rather than silently added to `suggestions` as unstructured text or dropped.
 
-**Not yet covered:** call #2 (single-block regeneration) and call #7 (FAQ schema/JSON-LD formatting) have no schema yet — regeneration likely reuses `pageDraft.ts`'s `pageDraftBlockSchema` wrapped in an object once that feature is built, rather than a new file. Flagged in the table above, not silently absent.
+**Not yet covered:** call #7 (FAQ schema/JSON-LD formatting) has no schema yet. Flagged in the table above, not silently absent. Call #2 (single-block regeneration) is now covered — see §9 — by `blockRegenerationSchema`, which reuses `pageDraft.ts`'s `pageDraftBlockSchema` wrapped in an object, exactly as anticipated here.
 
 ---
 
@@ -371,3 +371,39 @@ Unit (Vitest, `npm test`): `src/lib/crypto/siteToken.test.ts` (round-trip, tampe
 Live, end-to-end against the running dev server (no browser automation available in this environment — same constraint as [[nextjs-sanity-integration]]'s Day 3 verification; curl was used instead, submitting real multipart form POSTs including the hidden `$ACTION_*` fields Next.js renders into a Server-Action-bound `<form>` for progressive enhancement): signup issues a real session cookie and Prisma `User` row; a fresh account with no Site sees the "connect a project" empty state; connecting with an intentionally wrong token _and_ with a nonexistent project ID both fail with the real Sanity error surfaced in the form, and neither leaves a `Site` row behind; wrong password and duplicate-email signup both return form errors with no session issued; logout clears the session cookie and blocks `/pages` again; a garbage session cookie is rejected the same way an expired one would be.
 
 **Not verified live:** a successful connect with a genuinely valid Sanity token — no write-capable token exists in this environment (per [[sanity-adapter-day5]], generating one requires an interactive dashboard session at manage.sanity.io that this environment can't drive). That path is covered by the mocked unit test above instead; a real end-to-end check needs a human to paste in an actual project token.
+
+---
+
+*(Days 7–9's work — the app shell/site-switcher, empty/loading/error states + first staging deploy, and the structured-output schemas in §3 above — shipped in git history but was never written back into this running log. Not backfilled here; picking numbering up at Day 10.)*
+
+## 9. Generate Page: Persistence & Block Regeneration (Day 10)
+
+The first feature to actually call through `src/lib/ai/` — `/pages/new` (`src/app/(app)/pages/new/page.tsx` + `src/components/GeneratePageForm.tsx`) takes a brief (title, target keyword, audience, tone, key points, page type), runs it through call #1 (`generatePageDraftAction`, `src/lib/pages/`), and renders the returned draft as editable blocks held in local state. Saving persists it into Sanity through `CmsAdapter.createPage`/`updatePage` — never a direct Sanity call from a component — and a per-block "Regenerate" action re-runs call #2 for just that block.
+
+### No new field needed for "draft" state
+
+The task called for saving the draft in "a clear draft/unpublished state distinct from published." `Page.status` (§2) already covers this end-to-end — the Sanity schema (`studio/schemaTypes/page.ts`) already defaults it to `'draft'`, and `SanityAdapter.createPage` already defaults to `"draft"` when `status` is omitted (Day 5). `saveDraftPageAction` deliberately never passes `status` on create, so that one existing default stays the single source of truth instead of a second hardcoded `"draft"` drifting out of sync with it.
+
+### Regenerating one block still means writing the whole `body` array
+
+`CmsAdapter.updatePage`'s `contentBlocks`, when provided, replaces the entire body — there is no narrower "patch one array item" method on the interface (by design, per §6: content-shape translation is adapter-only, and the interface doesn't expose Portable Text's array-item addressing). So "regenerate this block, leave the rest of the page untouched" is implemented one layer up: `regenerateBlockAction` merges the newly-generated block into a full copy of the current `contentBlocks` (same `id`/order for every other entry) and calls `updatePage` with that whole array. The *write* touches the whole array; the *content* doesn't — every other block's value is byte-for-byte what it was.
+
+This only auto-persists once the page has already been saved once (`cmsDocumentId` is known). Before the first save, a regeneration only updates the client's local state — there's nothing to persist to yet, and requiring a save first would just be the same "Save" click happening twice.
+
+### `blockRegenerationSchema` reuses `pageDraftSchema`'s block union — with one gap schema validation can't close
+
+`src/lib/ai/schemas/blockRegeneration.ts` is `z.object({ block: pageDraftBlockSchema })`, exactly what §3's original note anticipated. What it can't enforce: that a targeted "rewrite this heading" call actually came back as a heading — the discriminated union validates *some* valid block, not *the same kind* the caller asked to regenerate. `regenerateBlockAction` compares `result.block.type` against the original block's type itself and discards a mismatch as a failure, before any persistence is attempted.
+
+### Edge cases: hand-edited blocks, and a regenerate call that fails
+
+Each draft block tracks an `edited` flag, set on any manual change in `DraftBlockEditor` and cleared on any AI-sourced write (initial generation or a successful regeneration). Clicking "Regenerate" on an `edited` block gates through a `window.confirm` before the call goes out — no extra dependency, consistent with this project's plain-HTML-forms style elsewhere. A failed regenerate call (AI error, type mismatch, or the persisting `updatePage` throwing after a good regeneration) returns `{ error }` rather than `{ block }`; the client only ever replaces a block's content on a full success, so a failure always leaves the block exactly as it was rather than blanking it out.
+
+### Scope boundary: one continuous session, not a reopenable editor
+
+There's no route to load an already-saved page back into this editable draft screen — `/pages/new` is a one-way session (brief → draft → regenerate/save), matching SPEC.md journey (a)'s own framing. Regenerating a block only works while that session's local state is still in memory. Revisiting an already-saved draft to keep refining it is a real gap, not an oversight, and would need its own route (`/pages/[slug]/edit` or similar) rehydrating the same `GeneratePageForm` state shape from a fetched `Page` — left for later since nothing in this task asked for it.
+
+### Testing
+
+Unit (Vitest, `npm test`): `src/lib/pages/slugify.test.ts`, `prompt.test.ts` (pure functions, no mocking), `mapping.test.ts` (block↔ContentBlock translation), `src/lib/ai/schemas/blockRegeneration.test.ts` (mirrors `pageDraft.test.ts` — validates a well-formed response, rejects an unknown block type, and documents that a type-swapped-but-otherwise-valid block passes schema validation, since that check is the action's job, not the schema's), and `generatePageDraftAction.test.ts`/`saveDraftPageAction.test.ts`/`regenerateBlockAction.test.ts` (mocked exactly like `connectSiteAction.test.ts` — no live AI/Sanity credentials exist in this environment, confirmed by `.env.local` having every AI provider key present but empty). The regenerate-action suite specifically covers: no-`cmsDocumentId` returns the block without ever calling `updatePage`; a present `cmsDocumentId` calls `updatePage` once with only the target index changed; an AI failure, a type mismatch, and a persistence failure after a good regeneration all return `{ error }` without a partial success; and an unknown `targetBlockId` short-circuits before any AI call at all.
+
+**Not verified live:** actual generation — no `GROQ_API_KEY`/`OPENAI_API_KEY`/`ANTHROPIC_API_KEY` is set in this environment. What *was* verified live: `next build` compiles the new route/actions with no type errors, and an unauthenticated request to `/pages/new` redirects to `/login?callbackUrl=%2Fpages%2Fnew`, matching every other route under `(app)`.

@@ -37,11 +37,19 @@ export default async function PagesIndex() {
 
   return (
     <div className="mx-auto w-full max-w-3xl px-6 py-16">
-      <div>
-        <h1 className="text-3xl font-semibold tracking-tight">Pages</h1>
-        <p className="mt-2 text-zinc-600 dark:text-zinc-400">
-          Live from Sanity — project content, not mock data.
-        </p>
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-3xl font-semibold tracking-tight">Pages</h1>
+          <p className="mt-2 text-zinc-600 dark:text-zinc-400">
+            Live from Sanity — project content, not mock data.
+          </p>
+        </div>
+        <Link
+          href="/pages/new"
+          className="shrink-0 rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white dark:bg-white dark:text-zinc-900"
+        >
+          New page
+        </Link>
       </div>
 
       {result.kind === "error" && (

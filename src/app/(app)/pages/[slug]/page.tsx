@@ -1,7 +1,9 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { ContentBlocks } from "@/components/ContentBlocks";
+import { SeoChecklist } from "@/components/SeoChecklist";
 import { getAdapterForCurrentUser, NoSiteConnectedError } from "@/lib/cms";
+import { analyzeSeoContent } from "@/lib/seo";
 import type { Page } from "@/types";
 
 async function getPage(
@@ -51,6 +53,8 @@ export default async function PageDetailRoute({
     notFound();
   }
 
+  const seoAnalysis = analyzeSeoContent(page);
+
   return (
     <article className="mx-auto w-full max-w-2xl px-6 py-16">
       <Link href="/pages" className="text-sm text-zinc-500 hover:underline">
@@ -72,21 +76,9 @@ export default async function PageDetailRoute({
         </div>
       </header>
 
-      <section className="mt-6 rounded-lg border border-zinc-200 p-4 text-sm dark:border-zinc-800">
-        <h2 className="font-medium text-zinc-700 dark:text-zinc-300">SEO</h2>
-        {page.metaDescription ? (
-          <dl className="mt-2 space-y-1 text-zinc-600 dark:text-zinc-400">
-            <div>
-              <dt className="inline font-medium">Meta description: </dt>
-              <dd className="inline">{page.metaDescription}</dd>
-            </div>
-          </dl>
-        ) : (
-          <p className="mt-2 text-zinc-500 dark:text-zinc-500">
-            No SEO fields filled in yet.
-          </p>
-        )}
-      </section>
+      <div className="mt-6">
+        <SeoChecklist analysis={seoAnalysis} />
+      </div>
 
       <div className="mt-8">
         {page.contentBlocks.length > 0 ? (

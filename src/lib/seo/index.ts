@@ -6,6 +6,8 @@ export {
   checkReadability,
   checkTitleLength,
 } from "./checks";
+export { extractHeadingBlocks, extractParagraphText } from "./text";
+export type { HeadingBlock } from "./text";
 export type {
   SeoAnalysis,
   SeoAnalysisInput,

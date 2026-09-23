@@ -1,9 +1,8 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { ContentBlocks } from "@/components/ContentBlocks";
-import { SeoChecklist } from "@/components/SeoChecklist";
+import { SeoPanel } from "@/components/SeoPanel";
 import { getAdapterForCurrentUser, NoSiteConnectedError } from "@/lib/cms";
-import { analyzeSeoContent } from "@/lib/seo";
 import type { Page } from "@/types";
 
 async function getPage(
@@ -53,8 +52,6 @@ export default async function PageDetailRoute({
     notFound();
   }
 
-  const seoAnalysis = analyzeSeoContent(page);
-
   return (
     <article className="mx-auto w-full max-w-2xl px-6 py-16">
       <Link href="/pages" className="text-sm text-zinc-500 hover:underline">
@@ -77,10 +74,10 @@ export default async function PageDetailRoute({
       </header>
 
       <div className="mt-6">
-        <SeoChecklist analysis={seoAnalysis} />
+        <SeoPanel page={page} />
       </div>
 
-      <div className="mt-8">
+      <div id="page-content-blocks" className="mt-8">
         {page.contentBlocks.length > 0 ? (
           <ContentBlocks blocks={page.contentBlocks} />
         ) : (

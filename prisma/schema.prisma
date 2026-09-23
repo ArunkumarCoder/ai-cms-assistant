@@ -37,6 +37,11 @@ model Site {
   // read-only/public with no token (SanityAdapter already supports that),
   // even though today's connect flow always asks for one.
   sanityTokenCiphertext String?
+  // Optional per-site style guide threaded into every AI generation/
+  // regeneration prompt for this site (src/lib/pages/prompt.ts) — app-DB
+  // only, same treatment as SeoAudit/qualityScore: it's workflow input, not
+  // CMS content, so it has no Sanity-side equivalent.
+  brandVoice            String?
   createdAt             DateTime @default(now())
   updatedAt             DateTime @updatedAt
 

@@ -77,8 +77,30 @@ describe("connectSiteAction", () => {
     expect(data.userId).toBe("user-1");
     expect(data.sanityProjectId).toBe("abc123");
     expect(data.sanityTokenCiphertext).not.toContain("sk_real_token_value");
+    expect(data.brandVoice).toBeNull();
 
     expect(setActiveSiteCookieMock).toHaveBeenCalledWith("site-1");
+  });
+
+  it("persists an optional brand voice when provided", async () => {
+    getPagesMock.mockResolvedValue([]);
+    siteCreateMock.mockResolvedValue({ id: "site-1" });
+
+    await expect(
+      connectSiteAction(
+        undefined,
+        formDataFor({
+          name: "Client Site",
+          projectId: "abc123",
+          dataset: "production",
+          token: "sk_real_token_value",
+          brandVoice: "Friendly and conversational.",
+        }),
+      ),
+    ).rejects.toThrow("REDIRECT:/pages");
+
+    const { data } = siteCreateMock.mock.calls[0][0];
+    expect(data.brandVoice).toBe("Friendly and conversational.");
   });
 
   it("does not persist a Site when the validation call fails", async () => {

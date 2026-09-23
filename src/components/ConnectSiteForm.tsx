@@ -70,6 +70,23 @@ export function ConnectSiteForm() {
         </p>
       </div>
 
+      <div>
+        <label htmlFor="brandVoice" className="block text-sm font-medium">
+          Brand voice <span className="font-normal text-zinc-500">(optional)</span>
+        </label>
+        <textarea
+          id="brandVoice"
+          name="brandVoice"
+          rows={3}
+          placeholder="e.g. Friendly and conversational, avoid jargon, always mention our 24/7 support."
+          className={inputClass}
+        />
+        <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
+          Included in every AI generation prompt for this site — can be added
+          or changed later from the Sites screen.
+        </p>
+      </div>
+
       {state?.error && (
         <p className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800 dark:border-red-900/50 dark:bg-red-950/40 dark:text-red-300">
           {state.error}

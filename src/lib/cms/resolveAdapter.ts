@@ -26,7 +26,13 @@ export class NotAuthenticatedError extends Error {
   }
 }
 
-export async function getAdapterForCurrentUser(): Promise<SanityAdapter> {
+// Split out from getAdapterForCurrentUser so callers that only need the Site
+// row itself (e.g. reading `brandVoice` for a generation prompt) don't have
+// to construct a SanityAdapter — and, unlike getAdapterForCurrentUser, this
+// returns null rather than throwing when there's no connected Site, since
+// "no site yet" should mean "no brand voice available," not a broken
+// generation call.
+export async function getActiveSiteForCurrentUser(): Promise<PrismaSite | null> {
   const session = await auth();
   const userId = session?.user?.id;
   if (!userId) {
@@ -34,7 +40,11 @@ export async function getAdapterForCurrentUser(): Promise<SanityAdapter> {
   }
 
   const sites = await getUserSites(userId);
-  const site = await resolveActiveSite(sites);
+  return resolveActiveSite(sites);
+}
+
+export async function getAdapterForCurrentUser(): Promise<SanityAdapter> {
+  const site = await getActiveSiteForCurrentUser();
   if (!site) {
     throw new NoSiteConnectedError();
   }
@@ -62,6 +72,7 @@ export function buildSanityAdapter(site: PrismaSite): SanityAdapter {
     cms: "sanity",
     sanityProjectId: site.sanityProjectId,
     sanityDataset: site.sanityDataset,
+    brandVoice: site.brandVoice ?? undefined,
     createdAt: site.createdAt.toISOString(),
     updatedAt: site.updatedAt.toISOString(),
   };

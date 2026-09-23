@@ -12,6 +12,11 @@ vi.mock("@/lib/ai", async () => {
   };
 });
 
+const getActiveSiteForCurrentUserMock = vi.fn();
+vi.mock("@/lib/cms", () => ({
+  getActiveSiteForCurrentUser: () => getActiveSiteForCurrentUserMock(),
+}));
+
 const { generatePageDraftAction } = await import("./generatePageDraftAction");
 
 const VALID_DRAFT = {
@@ -39,6 +44,7 @@ beforeEach(() => {
   generateStructuredMock.mockReset();
   requireUserMock.mockReset();
   requireUserMock.mockResolvedValue({ id: "user-1", email: "owner@example.com" });
+  getActiveSiteForCurrentUserMock.mockReset().mockResolvedValue(null);
 });
 
 describe("generatePageDraftAction", () => {
@@ -63,6 +69,36 @@ describe("generatePageDraftAction", () => {
 
     const [, , , options] = generateStructuredMock.mock.calls[0];
     expect(options).toEqual({ context: { userId: "user-1" } });
+  });
+
+  it("threads the active site's brand voice into the prompt when one is set", async () => {
+    getActiveSiteForCurrentUserMock.mockResolvedValue({ brandVoice: "Warm and plain-spoken." });
+    generateStructuredMock.mockResolvedValue({
+      data: VALID_DRAFT,
+      usage: { inputTokens: 10, outputTokens: 20 },
+      provider: "groq",
+      model: "llama-3.3-70b-versatile",
+    });
+
+    await generatePageDraftAction(BRIEF);
+
+    const [, prompt] = generateStructuredMock.mock.calls[0];
+    expect(prompt).toContain("Warm and plain-spoken.");
+  });
+
+  it("omits the brand voice line when no site is connected", async () => {
+    getActiveSiteForCurrentUserMock.mockResolvedValue(null);
+    generateStructuredMock.mockResolvedValue({
+      data: VALID_DRAFT,
+      usage: { inputTokens: 10, outputTokens: 20 },
+      provider: "groq",
+      model: "llama-3.3-70b-versatile",
+    });
+
+    await generatePageDraftAction(BRIEF);
+
+    const [, prompt] = generateStructuredMock.mock.calls[0];
+    expect(prompt).not.toContain("Brand voice");
   });
 
   it("returns an error instead of throwing when the provider call fails", async () => {

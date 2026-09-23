@@ -1,7 +1,7 @@
 "use server";
 
 import { requireUser } from "@/lib/auth/dal";
-import { getAdapterForCurrentUser } from "@/lib/cms";
+import { getActiveSiteForCurrentUser, getAdapterForCurrentUser } from "@/lib/cms";
 import {
   aiClient,
   blockRegenerationJsonSchema,
@@ -68,6 +68,7 @@ export async function regenerateBlockAction(
   input: RegenerateBlockInput,
 ): Promise<RegenerateBlockResult> {
   const user = await requireUser();
+  const site = await getActiveSiteForCurrentUser();
 
   const index = input.contentBlocks.findIndex(
     (block) => block.id === input.targetBlockId,
@@ -93,6 +94,7 @@ export async function regenerateBlockAction(
     pageType: input.pageType,
     audience: input.audience,
     tone: input.tone,
+    brandVoice: site?.brandVoice ?? undefined,
     precedingBlockSummary: input.contentBlocks[index - 1]?.content,
     followingBlockSummary: input.contentBlocks[index + 1]?.content,
     targetBlock: targetDraftBlock,

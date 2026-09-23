@@ -2,6 +2,7 @@
 
 import { requireUser } from "@/lib/auth/dal";
 import { aiClient, pageDraftJsonSchema, pageDraftSchema, type PageDraft } from "@/lib/ai";
+import { getActiveSiteForCurrentUser } from "@/lib/cms";
 import { buildPageGenerationPrompt, type PageBrief } from "./prompt";
 import { slugify } from "./slugify";
 
@@ -14,9 +15,12 @@ export async function generatePageDraftAction(
   brief: PageBrief,
 ): Promise<GeneratePageDraftResult> {
   const user = await requireUser();
+  // No connected Site (or one with no brand voice set) just means the
+  // prompt omits that line — generation shouldn't require a Site to work.
+  const site = await getActiveSiteForCurrentUser();
 
   try {
-    const prompt = buildPageGenerationPrompt(brief);
+    const prompt = buildPageGenerationPrompt({ ...brief, brandVoice: site?.brandVoice ?? undefined });
     const result = await aiClient.generateStructured<PageDraft>(
       "page-generation",
       prompt,

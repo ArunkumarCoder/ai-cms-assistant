@@ -22,6 +22,7 @@ const ConnectSiteSchema = z.object({
     }),
   dataset: z.string().trim().min(1, { error: "Dataset is required." }),
   token: z.string().trim().min(1, { error: "An API token is required." }),
+  brandVoice: z.string().trim().optional(),
 });
 
 export async function connectSiteAction(
@@ -35,11 +36,12 @@ export async function connectSiteAction(
     projectId: formData.get("projectId"),
     dataset: formData.get("dataset"),
     token: formData.get("token"),
+    brandVoice: formData.get("brandVoice") ?? undefined,
   });
   if (!parsed.success) {
     return { error: parsed.error.issues[0]?.message ?? "Invalid input." };
   }
-  const { name, projectId, dataset, token } = parsed.data;
+  const { name, projectId, dataset, token, brandVoice } = parsed.data;
 
   // Validate before saving anything: construct a throwaway adapter against
   // exactly what the user typed and make one real call through it. A wrong
@@ -84,6 +86,7 @@ export async function connectSiteAction(
       sanityProjectId: projectId,
       sanityDataset: dataset,
       sanityTokenCiphertext: encryptSiteToken(token),
+      brandVoice: brandVoice || null,
     },
   });
 

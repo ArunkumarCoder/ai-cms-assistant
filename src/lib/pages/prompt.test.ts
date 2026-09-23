@@ -27,6 +27,20 @@ describe("buildPageGenerationPrompt", () => {
     expect(prompt).not.toContain("Target audience:");
     expect(prompt).not.toContain("Tone:");
   });
+
+  it("includes the site's brand voice when set", () => {
+    const prompt = buildPageGenerationPrompt({
+      ...brief,
+      brandVoice: "Friendly and conversational, avoid jargon.",
+    });
+    expect(prompt).toContain("Brand voice / style guide to follow:");
+    expect(prompt).toContain("Friendly and conversational, avoid jargon.");
+  });
+
+  it("omits the brand voice line when the site has none set", () => {
+    const prompt = buildPageGenerationPrompt({ ...brief, brandVoice: undefined });
+    expect(prompt).not.toContain("Brand voice");
+  });
 });
 
 describe("buildBlockRegenerationPrompt", () => {
@@ -60,5 +74,29 @@ describe("buildBlockRegenerationPrompt", () => {
 
     expect(prompt).not.toContain("right before");
     expect(prompt).not.toContain("right after");
+  });
+
+  it("includes the site's brand voice when set", () => {
+    const prompt = buildBlockRegenerationPrompt({
+      pageTitle: "Local Plumbing Services",
+      metaDescription: "",
+      targetKeyword: null,
+      pageType: "landing",
+      brandVoice: "Warm, plain-spoken, no corporate jargon.",
+      targetBlock: { type: "heading", content: "Welcome", level: 2 },
+    });
+    expect(prompt).toContain("Brand voice / style guide to follow:");
+    expect(prompt).toContain("Warm, plain-spoken, no corporate jargon.");
+  });
+
+  it("omits the brand voice line when the site has none set", () => {
+    const prompt = buildBlockRegenerationPrompt({
+      pageTitle: "Local Plumbing Services",
+      metaDescription: "",
+      targetKeyword: null,
+      pageType: "landing",
+      targetBlock: { type: "heading", content: "Welcome", level: 2 },
+    });
+    expect(prompt).not.toContain("Brand voice");
   });
 });

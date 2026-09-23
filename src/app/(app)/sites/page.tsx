@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { requireUser } from "@/lib/auth/dal";
 import { getUserSites, resolveActiveSite } from "@/lib/sites/activeSite";
-import { setActiveSiteAction } from "@/lib/sites/actions";
+import { setActiveSiteAction, updateSiteBrandVoiceAction } from "@/lib/sites/actions";
 import { SubmitButton } from "@/components/SubmitButton";
 
 export const metadata = { title: "Sites" };
@@ -48,32 +48,53 @@ export default async function SitesPage() {
           {sites.map((site) => {
             const isActive = site.id === activeSite?.id;
             return (
-              <li
-                key={site.id}
-                className="flex items-center justify-between gap-4 py-5"
-              >
-                <div>
-                  <h2 className="text-lg font-medium">{site.name}</h2>
-                  <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
-                    {site.sanityProjectId} · {site.sanityDataset}
-                  </p>
+              <li key={site.id} className="py-5">
+                <div className="flex items-center justify-between gap-4">
+                  <div>
+                    <h2 className="text-lg font-medium">{site.name}</h2>
+                    <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
+                      {site.sanityProjectId} · {site.sanityDataset}
+                    </p>
+                  </div>
+                  {isActive ? (
+                    <span className="shrink-0 rounded-full bg-emerald-100 px-3 py-1 text-xs font-medium text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300">
+                      Active
+                    </span>
+                  ) : (
+                    <form action={setActiveSiteAction}>
+                      <input type="hidden" name="siteId" value={site.id} />
+                      <input type="hidden" name="redirectTo" value="/sites" />
+                      <SubmitButton
+                        pendingLabel="Switching…"
+                        className="shrink-0 rounded-lg border border-zinc-300 px-3 py-1.5 text-sm font-medium hover:bg-zinc-50 dark:border-zinc-700 dark:hover:bg-zinc-900"
+                      >
+                        Make active
+                      </SubmitButton>
+                    </form>
+                  )}
                 </div>
-                {isActive ? (
-                  <span className="shrink-0 rounded-full bg-emerald-100 px-3 py-1 text-xs font-medium text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300">
-                    Active
-                  </span>
-                ) : (
-                  <form action={setActiveSiteAction}>
+
+                <details className="mt-3" open={Boolean(site.brandVoice)}>
+                  <summary className="cursor-pointer text-sm font-medium text-zinc-600 dark:text-zinc-400">
+                    Brand voice{site.brandVoice ? "" : " (not set)"}
+                  </summary>
+                  <form action={updateSiteBrandVoiceAction} className="mt-2 max-w-xl space-y-2">
                     <input type="hidden" name="siteId" value={site.id} />
-                    <input type="hidden" name="redirectTo" value="/sites" />
+                    <textarea
+                      name="brandVoice"
+                      rows={3}
+                      defaultValue={site.brandVoice ?? ""}
+                      placeholder="e.g. Friendly and conversational, avoid jargon, always mention our 24/7 support."
+                      className="w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-900"
+                    />
                     <SubmitButton
-                      pendingLabel="Switching…"
-                      className="shrink-0 rounded-lg border border-zinc-300 px-3 py-1.5 text-sm font-medium hover:bg-zinc-50 dark:border-zinc-700 dark:hover:bg-zinc-900"
+                      pendingLabel="Saving…"
+                      className="rounded-lg border border-zinc-300 px-3 py-1.5 text-sm font-medium hover:bg-zinc-50 dark:border-zinc-700 dark:hover:bg-zinc-900"
                     >
-                      Make active
+                      Save brand voice
                     </SubmitButton>
                   </form>
-                )}
+                </details>
               </li>
             );
           })}

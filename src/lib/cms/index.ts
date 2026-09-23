@@ -10,6 +10,7 @@ export type {
 export { SanityAdapter } from "./sanityAdapter";
 export type { SanityQueryClient } from "./sanityAdapter";
 export {
+  getActiveSiteForCurrentUser,
   getAdapterForCurrentUser,
   NoSiteConnectedError,
   NotAuthenticatedError,

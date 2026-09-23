@@ -13,6 +13,11 @@ export interface Site {
   sanityProjectId?: string;
   sanityDataset?: string;
   wordpressUrl?: string;
+  // Optional style guide threaded into every AI generation/regeneration
+  // prompt for this site (src/lib/pages/prompt.ts) — set on the site itself
+  // rather than re-entered per brief, so every page generated for this
+  // client stays consistent.
+  brandVoice?: string;
   createdAt: string;
   updatedAt: string;
 }

@@ -14,8 +14,10 @@ vi.mock("@/lib/ai", async () => {
 
 const updatePageMock = vi.fn();
 const getAdapterForCurrentUserMock = vi.fn();
+const getActiveSiteForCurrentUserMock = vi.fn();
 vi.mock("@/lib/cms", () => ({
   getAdapterForCurrentUser: () => getAdapterForCurrentUserMock(),
+  getActiveSiteForCurrentUser: () => getActiveSiteForCurrentUserMock(),
 }));
 
 const { regenerateBlockAction } = await import("./regenerateBlockAction");
@@ -52,6 +54,7 @@ beforeEach(() => {
   generateStructuredMock.mockReset();
   updatePageMock.mockReset();
   getAdapterForCurrentUserMock.mockReset().mockResolvedValue({ updatePage: updatePageMock });
+  getActiveSiteForCurrentUserMock.mockReset().mockResolvedValue(null);
 });
 
 describe("regenerateBlockAction", () => {
@@ -116,5 +119,15 @@ describe("regenerateBlockAction", () => {
 
     expect("error" in result).toBe(true);
     expect(generateStructuredMock).not.toHaveBeenCalled();
+  });
+
+  it("threads the active site's brand voice into the regeneration prompt", async () => {
+    getActiveSiteForCurrentUserMock.mockResolvedValue({ brandVoice: "Warm and plain-spoken." });
+    mockRegenerated({ type: "paragraph", content: "New paragraph" });
+
+    await regenerateBlockAction(baseInput());
+
+    const [, prompt] = generateStructuredMock.mock.calls[0];
+    expect(prompt).toContain("Warm and plain-spoken.");
   });
 });

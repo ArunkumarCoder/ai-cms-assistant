@@ -2,8 +2,7 @@
 
 import { requireUser } from "@/lib/auth/dal";
 import { getAdapterForCurrentUser } from "@/lib/cms";
-import { computeQualityScore } from "@/lib/quality";
-import type { ContentBlock, FaqItem, Page, PageType } from "@/types";
+import type { ContentBlock, Page, PageType } from "@/types";
 import { slugify } from "./slugify";
 
 // Persists the Generate Page draft through CmsAdapter — never a direct
@@ -15,10 +14,13 @@ import { slugify } from "./slugify";
 // covers "clear draft/unpublished state distinct from published," so no new
 // field was needed here (see SPEC.md §9).
 //
-// `faqItems` is always the page's *current* FAQ list (`[]` for a brand-new
-// page — this flow never edits FAQs itself), needed only to feed the
-// composite quality score's structure sub-score (SPEC.md §10) — it's not
-// written back unless it was already part of `contentBlocks`/the page.
+// No `qualityScore` field here (nor `faqItems`, which an earlier version of
+// this action needed only to compute one) — every createPage/updatePage call
+// made through getAdapterForCurrentUser() now scores itself automatically
+// (src/lib/quality/autoScore.ts, SPEC.md §11), computed from the adapter's
+// own post-write Page rather than this action's input. Duplicating that
+// computation here would be redundant work immediately overwritten by the
+// adapter wrapper.
 export interface SaveDraftPageInput {
   cmsDocumentId?: string;
   title: string;
@@ -27,7 +29,6 @@ export interface SaveDraftPageInput {
   targetKeyword: string | null;
   pageType: PageType;
   contentBlocks: ContentBlock[];
-  faqItems: FaqItem[];
 }
 
 export type SaveDraftPageResult = { page: Page } | { error: string };
@@ -44,18 +45,6 @@ export async function saveDraftPageAction(
   const slug = slugify(input.slug || input.title);
   const targetKeyword = input.targetKeyword ?? undefined;
 
-  // Computed from exactly what's about to be saved (not re-read from the
-  // CMS afterward) so the persisted score always matches this save's own
-  // content — deterministic and free of AI latency/cost, so there's no
-  // reason to defer it to a separate step.
-  const quality = computeQualityScore({
-    title: input.title,
-    metaDescription: input.metaDescription,
-    targetKeyword,
-    contentBlocks: input.contentBlocks,
-    faqItems: input.faqItems,
-  });
-
   try {
     const adapter = await getAdapterForCurrentUser();
     const page = input.cmsDocumentId
@@ -66,7 +55,6 @@ export async function saveDraftPageAction(
           targetKeyword,
           pageType: input.pageType,
           contentBlocks: input.contentBlocks,
-          qualityScore: quality.score,
         })
       : await adapter.createPage({
           title: input.title,
@@ -75,7 +63,6 @@ export async function saveDraftPageAction(
           targetKeyword,
           pageType: input.pageType,
           contentBlocks: input.contentBlocks,
-          qualityScore: quality.score,
         });
     return { page };
   } catch (err) {

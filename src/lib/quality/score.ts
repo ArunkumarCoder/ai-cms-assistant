@@ -203,7 +203,10 @@ function computeReadabilitySubScore(paragraphText: string, wordCount: number): Q
   const flesch = fleschReadingEase(paragraphText);
   const score = flesch === null ? 0 : Math.max(0, Math.min(100, Math.round(flesch)));
   const reason = checkReadability(paragraphText).reason;
-  const isReliable = wordCount === 0 || wordCount >= MIN_READABILITY_WORDS;
+  // Same threshold computeQualityScore uses to decide whether this sub-score
+  // counts toward the composite — the note only appears when it doesn't, no
+  // matter whether that's because there's a little text or none at all.
+  const isReliable = wordCount >= MIN_READABILITY_WORDS;
   return {
     score,
     reason: isReliable

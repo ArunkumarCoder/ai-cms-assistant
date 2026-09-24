@@ -1,5 +1,4 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { FaqItem } from "@/types";
 
 const requireUserMock = vi.fn();
 vi.mock("@/lib/auth/dal", () => ({ requireUser: () => requireUserMock() }));
@@ -16,7 +15,6 @@ const { saveDraftPageAction } = await import("./saveDraftPageAction");
 const CONTENT_BLOCKS = [
   { id: "b1", type: "paragraph" as const, order: 0, content: "Hello." },
 ];
-const FAQ_ITEMS: FaqItem[] = [];
 
 beforeEach(() => {
   requireUserMock.mockReset().mockResolvedValue({ id: "user-1" });
@@ -39,7 +37,6 @@ describe("saveDraftPageAction", () => {
       targetKeyword: null,
       pageType: "landing",
       contentBlocks: CONTENT_BLOCKS,
-      faqItems: FAQ_ITEMS,
     });
 
     expect(createPageMock).toHaveBeenCalledTimes(1);
@@ -48,9 +45,10 @@ describe("saveDraftPageAction", () => {
     expect(input.slug).toBe("my-page");
     expect(input.status).toBeUndefined(); // adapter's own default applies
     expect(input.targetKeyword).toBeUndefined(); // null -> undefined at the boundary
-    expect(typeof input.qualityScore).toBe("number");
-    expect(input.qualityScore).toBeGreaterThanOrEqual(0);
-    expect(input.qualityScore).toBeLessThanOrEqual(100);
+    // Quality scoring is no longer this action's job (src/lib/quality/autoScore.ts
+    // does it automatically inside getAdapterForCurrentUser's returned adapter) —
+    // this action's own payload has no qualityScore field at all.
+    expect(input.qualityScore).toBeUndefined();
     expect("page" in result && result.page.slug).toBe("my-page");
   });
 
@@ -65,14 +63,13 @@ describe("saveDraftPageAction", () => {
       targetKeyword: "keyword",
       pageType: "landing",
       contentBlocks: CONTENT_BLOCKS,
-      faqItems: FAQ_ITEMS,
     });
 
     expect(updatePageMock).toHaveBeenCalledTimes(1);
     expect(createPageMock).not.toHaveBeenCalled();
     expect(updatePageMock).toHaveBeenCalledWith(
       "page-1",
-      expect.objectContaining({ targetKeyword: "keyword", qualityScore: expect.any(Number) }),
+      expect.objectContaining({ targetKeyword: "keyword" }),
     );
   });
 
@@ -86,7 +83,6 @@ describe("saveDraftPageAction", () => {
       targetKeyword: null,
       pageType: "landing",
       contentBlocks: CONTENT_BLOCKS,
-      faqItems: FAQ_ITEMS,
     });
 
     expect(result).toEqual({ error: "Sanity write failed" });
@@ -102,7 +98,6 @@ describe("saveDraftPageAction", () => {
       targetKeyword: null,
       pageType: "landing",
       contentBlocks: CONTENT_BLOCKS,
-      faqItems: FAQ_ITEMS,
     });
 
     expect("error" in result).toBe(true);

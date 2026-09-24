@@ -5,7 +5,9 @@ import { apiVersion } from "@/sanity/apiVersion";
 import { decryptSiteToken } from "@/lib/crypto/siteToken";
 import { auth } from "@/auth";
 import { getUserSites, resolveActiveSite } from "@/lib/sites/activeSite";
+import { withQualityScoring } from "@/lib/quality";
 import type { Site } from "@/types";
+import type { CmsAdapter } from "./adapter";
 import { SanityAdapter } from "./sanityAdapter";
 
 // Day 6 replacement for the old defaultAdapter.ts singleton: one hardcoded
@@ -43,13 +45,23 @@ export async function getActiveSiteForCurrentUser(): Promise<PrismaSite | null> 
   return resolveActiveSite(sites);
 }
 
-export async function getAdapterForCurrentUser(): Promise<SanityAdapter> {
+// Returns the CmsAdapter interface, not the concrete SanityAdapter class —
+// every real caller (saveDraftPageAction, regenerateBlockAction, /pages'
+// reads) only ever needs CmsAdapter's own methods, and this adapter isn't
+// literally a SanityAdapter instance once withQualityScoring wraps it (Day
+// 15, SPEC.md §11): every createPage/updatePage call through it now also
+// computes and persists a fresh quality score, automatically, on every save
+// (and on a future "publish" action too, whenever one exists — it would also
+// just call updatePage). connectSiteAction.ts builds its own throwaway
+// SanityAdapter directly for validation and deliberately bypasses this
+// wrapper — a one-off probe call shouldn't write a score or a history row.
+export async function getAdapterForCurrentUser(): Promise<CmsAdapter> {
   const site = await getActiveSiteForCurrentUser();
   if (!site) {
     throw new NoSiteConnectedError();
   }
 
-  return buildSanityAdapter(site);
+  return withQualityScoring(buildSanityAdapter(site), { siteId: site.id });
 }
 
 export function buildSanityAdapter(site: PrismaSite): SanityAdapter {

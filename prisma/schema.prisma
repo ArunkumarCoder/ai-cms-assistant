@@ -76,3 +76,28 @@ model AiCallLog {
   @@index([siteId])
   @@index([createdAt])
 }
+
+// Append-only history for src/lib/quality/'s composite quality score
+// (SPEC.md §10-11). The *current* score is denormalized onto the Sanity page
+// document itself (Page.qualityScore) for cheap list-view reads — this table
+// exists because that single field can't also hold "every score this page
+// has ever had." `pageId` is the Sanity document id (Page.cmsDocumentId),
+// not a Prisma relation: Sanity, not Postgres, is the source of truth for
+// Page content, same reasoning AiCallLog already uses for its own unenforced
+// siteId/userId rather than a `@relation`. `subScores` mirrors
+// QualityScore["subScores"] (src/lib/ai/schemas/qualityScore.ts) verbatim —
+// each sub-score's `reason` text included, not just its number, since a
+// future trend view (Phase 5) will want to show *why* a score moved, not
+// just that it did.
+model QualityScoreHistory {
+  id        String   @id @default(cuid())
+  pageId    String
+  siteId    String
+  score     Int
+  subScores Json
+  createdAt DateTime @default(now())
+
+  @@index([pageId])
+  @@index([siteId])
+  @@index([createdAt])
+}

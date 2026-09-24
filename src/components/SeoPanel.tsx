@@ -151,7 +151,6 @@ export function SeoPanel({ page }: SeoPanelProps) {
       targetKeyword: targetKeyword || null,
       pageType: page.pageType,
       contentBlocks: page.contentBlocks,
-      faqItems: page.faqItems,
     });
     setSavePending(false);
 

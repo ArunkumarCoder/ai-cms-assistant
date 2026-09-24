@@ -134,9 +134,6 @@ export function GeneratePageForm() {
       targetKeyword: draft.targetKeyword,
       pageType: draft.pageType,
       contentBlocks: toContentBlocks(draft.blocks),
-      // This flow never generates FAQs — a freshly-generated draft always
-      // starts with none.
-      faqItems: [],
     });
     setSavePending(false);
 

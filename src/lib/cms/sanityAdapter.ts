@@ -117,7 +117,7 @@ export class SanityAdapter implements CmsAdapter {
       status: data.status ?? "draft",
       targetKeyword: data.targetKeyword,
       seo: { metaDescription: data.metaDescription },
-      qualityScore: null,
+      qualityScore: data.qualityScore ?? null,
       body: contentBlocksToPortableText(data.contentBlocks ?? []),
       faqItems: faqItemsToSanity(data.faqItems ?? []),
     });
@@ -139,6 +139,7 @@ export class SanityAdapter implements CmsAdapter {
       fields.body = contentBlocksToPortableText(data.contentBlocks);
     }
     if (data.faqItems !== undefined) fields.faqItems = faqItemsToSanity(data.faqItems);
+    if (data.qualityScore !== undefined) fields.qualityScore = data.qualityScore;
 
     await this.client.patch(cmsDocumentId).set(fields).commit();
 
@@ -449,6 +450,13 @@ function assertValidSlug(value: string, context: string): void {
   }
 }
 
+function assertQualityScore(value: number | null | undefined, context: string): void {
+  if (value === undefined || value === null) return;
+  if (typeof value !== "number" || value < 0 || value > 100) {
+    throw new Error(`${context}: "qualityScore" must be a number between 0 and 100, or null.`);
+  }
+}
+
 function assertCreatePageInput(data: CreatePageInput): void {
   assertNonEmptyString(data.title, "title", "CreatePageInput");
   assertNonEmptyString(data.slug, "slug", "CreatePageInput");
@@ -466,6 +474,7 @@ function assertCreatePageInput(data: CreatePageInput): void {
       `CreatePageInput: "status" must be one of ${PAGE_STATUSES.join(", ")} (got "${data.status}").`,
     );
   }
+  assertQualityScore(data.qualityScore, "CreatePageInput");
 }
 
 function assertUpdatePageInput(data: UpdatePageInput): void {
@@ -487,6 +496,7 @@ function assertUpdatePageInput(data: UpdatePageInput): void {
       `UpdatePageInput: "status" must be one of ${PAGE_STATUSES.join(", ")} (got "${data.status}").`,
     );
   }
+  assertQualityScore(data.qualityScore, "UpdatePageInput");
 }
 
 function assertUpdateImageInput(data: UpdateImageInput): void {

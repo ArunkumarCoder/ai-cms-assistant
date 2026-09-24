@@ -4,11 +4,13 @@ import { useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { Page } from "@/types";
 import { analyzeSeoContent, type SeoCheckResult } from "@/lib/seo";
+import { computeQualityScore } from "@/lib/quality";
 import type { SeoSuggestions } from "@/lib/ai";
 import { generateSeoSuggestionsAction } from "@/lib/pages/generateSeoSuggestionsAction";
 import { saveDraftPageAction } from "@/lib/pages/saveDraftPageAction";
 import { SerpPreview } from "./SerpPreview";
 import { SeoChecklist } from "./SeoChecklist";
+import { QualityScorePanel } from "./QualityScorePanel";
 
 const fieldClass =
   "mt-1 w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-900";
@@ -56,6 +58,22 @@ export function SeoPanel({ page }: SeoPanelProps) {
         contentBlocks: page.contentBlocks,
       }),
     [title, metaDescription, targetKeyword, page.contentBlocks],
+  );
+
+  // Recomputed live from the same in-progress edits as `analysis` above, so
+  // the score reflects what "Save changes" is about to persist, not
+  // yesterday's saved snapshot. contentBlocks/faqItems aren't editable from
+  // this screen, so only title/metaDescription/targetKeyword ever change it.
+  const quality = useMemo(
+    () =>
+      computeQualityScore({
+        title,
+        metaDescription,
+        targetKeyword: targetKeyword || undefined,
+        contentBlocks: page.contentBlocks,
+        faqItems: page.faqItems,
+      }),
+    [title, metaDescription, targetKeyword, page.contentBlocks, page.faqItems],
   );
 
   function flashHighlight(field: HighlightedField) {
@@ -133,6 +151,7 @@ export function SeoPanel({ page }: SeoPanelProps) {
       targetKeyword: targetKeyword || null,
       pageType: page.pageType,
       contentBlocks: page.contentBlocks,
+      faqItems: page.faqItems,
     });
     setSavePending(false);
 
@@ -146,6 +165,8 @@ export function SeoPanel({ page }: SeoPanelProps) {
 
   return (
     <div className="space-y-4">
+      <QualityScorePanel quality={quality} />
+
       <div className="rounded-lg border border-zinc-200 p-4 text-sm dark:border-zinc-800">
         <div className="space-y-3">
           <div>

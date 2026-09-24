@@ -25,12 +25,20 @@ export type PageSummary = Omit<Page, "contentBlocks" | "faqItems"> & {
 // Fields the caller can't set on create: `id`/`createdAt`/`updatedAt` are
 // bookkeeping the adapter (or the CMS) assigns; `siteId`/`cmsDocumentId` are
 // filled in by the adapter instance itself (see CmsAdapter's top comment —
-// it's already bound to one Site); `latestSeoAuditId` and `qualityScore` are
-// written later by the (not-yet-built) SEO-audit feature, never at creation —
-// every new page starts with no score. `status` defaults to "draft" when
+// it's already bound to one Site); `latestSeoAuditId` is written later by
+// the (not-yet-built) SEO-audit feature. `status` defaults to "draft" when
 // omitted. `contentBlocks`/`faqItems` default to `[]`: a page can be created
 // from a brief before content blocks exist, and FAQs are always a later,
 // separate generation step (SPEC.md journey d).
+//
+// `qualityScore` was originally excluded entirely here (Day 5: "a new page
+// always starts with no score, written later by the not-yet-built SEO-audit
+// feature"). Day 18's composite quality score (src/lib/quality/) is
+// deterministic and cheap enough to compute synchronously at save time —
+// see saveDraftPageAction.ts — so it's now optional here rather than
+// permanently absent; still optional since not every caller computes one
+// (e.g. a page created directly in Sanity Studio has none until its next
+// save through this app).
 export type CreatePageInput = Omit<
   Page,
   | "id"
@@ -47,6 +55,7 @@ export type CreatePageInput = Omit<
   status?: PageStatus;
   contentBlocks?: ContentBlock[];
   faqItems?: FaqItem[];
+  qualityScore?: number | null;
 };
 
 // A patch, not a full replacement — every field optional, same reasoning as

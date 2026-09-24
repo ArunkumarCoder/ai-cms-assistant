@@ -195,6 +195,30 @@ describe("SanityAdapter.createPage", () => {
       "Insufficient permissions",
     );
   });
+
+  it("defaults qualityScore to null when not provided, and writes it through when it is", async () => {
+    const create = vi.fn().mockResolvedValue({ _id: "page-2" });
+    const fetch = vi
+      .fn()
+      .mockResolvedValue({ ...samplePageDetail, _id: "page-2" });
+    const adapter = new SanityAdapter(site, makeClient({ create, fetch }));
+
+    await adapter.createPage(validInput);
+    expect(create.mock.calls[0][0].qualityScore).toBeNull();
+
+    await adapter.createPage({ ...validInput, qualityScore: 72 });
+    expect(create.mock.calls[1][0].qualityScore).toBe(72);
+  });
+
+  it("rejects a qualityScore outside 0-100", async () => {
+    const create = vi.fn();
+    const adapter = new SanityAdapter(site, makeClient({ create }));
+
+    await expect(
+      adapter.createPage({ ...validInput, qualityScore: 150 }),
+    ).rejects.toThrow(/qualityScore/i);
+    expect(create).not.toHaveBeenCalled();
+  });
 });
 
 describe("SanityAdapter.updatePage", () => {
@@ -212,6 +236,27 @@ describe("SanityAdapter.updatePage", () => {
     expect(patch).toHaveBeenCalledWith("page-1");
     expect(setMock).toHaveBeenCalledWith({ title: "Updated title" });
     expect(page.id).toBe("page-1");
+  });
+
+  it("patches qualityScore when provided", async () => {
+    const setMock = vi.fn(() => ({
+      commit: vi.fn().mockResolvedValue(undefined),
+    }));
+    const patch = vi.fn(() => ({ set: setMock }));
+    const fetch = vi.fn().mockResolvedValue(samplePageDetail);
+    const adapter = new SanityAdapter(site, makeClient({ patch, fetch }));
+
+    await adapter.updatePage("page-1", { qualityScore: 55 });
+
+    expect(setMock).toHaveBeenCalledWith({ qualityScore: 55 });
+  });
+
+  it("rejects a qualityScore outside 0-100", async () => {
+    const adapter = new SanityAdapter(site, makeClient());
+
+    await expect(
+      adapter.updatePage("page-1", { qualityScore: -1 }),
+    ).rejects.toThrow(/qualityScore/i);
   });
 });
 

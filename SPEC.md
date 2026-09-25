@@ -473,4 +473,38 @@ No trend UI reads this table yet — visualizing it is explicitly Phase 5's dash
 
 Unit (Vitest): `src/lib/quality/autoScore.test.ts` — a fake `CmsAdapter` (not `SanityAdapter`, keeping the wrapper's CMS-agnosticism honest) verifies `createPage`/`updatePage` each trigger exactly one additional scoring `updatePage` call using the *returned* page rather than the input, that a history row is written with the right `pageId`/`siteId`/`subScores` shape, that a history-write failure doesn't block the current-score write or its return value, that a genuine score-patch failure still propagates, and that every other `CmsAdapter` method (`getPages`/`getPage`/`listImages`/`updateImage`) passes through untouched. `saveDraftPageAction.test.ts` was updated to assert it no longer sends a `qualityScore` field at all — that responsibility fully moved to the adapter layer.
 
-This closes Phase 3 (deterministic SEO checks → AI-assisted suggestions → SERP preview → composite quality score → automatic scoring → score history). Phase 4 starts next: the media library view, the first step toward batch alt-text generation.
+This closes Phase 3 (deterministic SEO checks → AI-assisted suggestions → SERP preview → composite quality score → automatic scoring → score history).
+
+## 12. Media Library (Day 16) — Phase 4 begins
+
+An honest view of every image across the active Site's content and whether its alt text is actually worth anything — no AI call yet (that's tomorrow); today is purely surfacing what needs fixing. `/media` (`src/app/(app)/media/page.tsx`), added to the Sidebar alongside Sites/Pages.
+
+### Composing two existing adapter calls instead of a new one
+
+The task called for building this "not a direct Sanity query, keep using the adapter." `CmsAdapter` already has everything needed: `listImages()` returns every image (§6's own design note 5 already flagged that this means scanning every page's body, not a real asset-library endpoint — still true, still hidden from this screen) and `getPages()` returns every page's `id`/`title`/`slug`. The media page calls both (`Promise.all`) and joins them itself — `image.usedOnPageIds[0]` against `PageSummary.id`, both of which are the same Sanity `_id` today (Day 5's stopgap, §7 point 2) — rather than adding a third adapter method or a join CmsAdapter would have to expose. If the two reads ever see a slightly inconsistent snapshot (a page renamed or deleted between the two calls, no transaction spans them), the image just shows "used on an unknown page" instead of crashing — same no-caching, no-transaction tradeoff §5 already accepted for everything else in this app.
+
+### "Weak" alt text is a new, purely content-based heuristic
+
+`assessAltText` (`src/lib/images/altTextQuality.ts`) flags an image when: `altTextStatus` is `"missing"` (or the text is empty/whitespace despite a non-missing status — belt and suspenders); the text is under 5 characters; it's an exact match against a small list of generic placeholders (`"image"`, `"photo"`, `"screenshot"`, `"untitled"`, etc.); or it's just the asset's filename with separators normalized. It's deliberately independent of `altTextStatus` beyond the "missing" case — an image already marked `"ai-generated"` or even `"reviewed"` can still carry genuinely weak text (someone typed `"image"` once and moved on), and content is the only signal that actually tells a reader whether the text means anything. The generic-word check is an *exact* match on the whole trimmed string, not a substring search — "Product photo of the blue widget" contains "photo" but isn't flagged, only literal one-or-two-word non-answers are.
+
+This heuristic will get noisier as more real content flows through it (the task itself flags "refine later if it's noisy") — it's intentionally simple today rather than front-loading tuning against a dataset of three demo images.
+
+### Filtering, sorting, and "very large" libraries
+
+Filter (All / Flagged) and sort (Flagged first / Recently updated) are both client-side, over an array `getMediaLibrary()` already fetched in full — deliberate, not an oversight: `listImages()` has no CMS-level pagination cursor to push a filter into (§6 flagged "whether getPages/listImages should support pagination" as an open question back on Day 4, never resolved), and pushing the *derived* "flagged" heuristic down into a paginated fetch would risk hiding every flagged image behind several pages of unflagged ones. Instead, `MediaLibrary.tsx` windows the already-fetched array client-side (24 at a time, "Show more" appends rather than re-fetching) — filter and sort apply before windowing, so they compose correctly regardless of library size. This is real lazy-rendering, just not query-level pagination; a media library that grew into the tens of thousands of images would need the adapter-level cursor §6 already anticipated, which is a real follow-up, not attempted here since nothing in this project's actual seeded data comes close to that scale yet.
+
+### States handled
+
+- **Zero images:** a dashed-border empty state, same visual language as Sites'/Pages' own empty states.
+- **Adapter failure:** caught and rendered inline (red box with the underlying error), matching `/pages`'s exact pattern — never left to throw into the segment's `error.tsx`.
+- **No Site connected:** `NoSiteConnectedError` redirects to `/sites`, same as `/pages`.
+- **Zero results after filtering:** distinct from "zero images overall" — "No flagged images" reads as a win, not an error.
+- **Large library:** client-side windowing, above.
+
+### Testing
+
+Unit (Vitest): `src/lib/images/altTextQuality.test.ts` covers every flagging path (missing status, empty-despite-not-missing, too short, each generic word, filename-as-alt-text) and confirms real descriptive text — including text that merely *contains* a generic word — isn't flagged.
+
+**Not verified live:** no browser automation is available in this environment (same constraint noted for every earlier Phase 1/2 UI, e.g. §8's Day 6 log) and no write-capable Sanity token exists here either, so the filter/sort/"show more" interactions weren't clicked through in a real browser. What *was* verified: `next build` compiles `/media` with no type errors and registers it as a dynamic (`ƒ`) route rendered on demand, identical to `/pages`' own build output — including the same expected "Dynamic server usage" log during static-generation probing, which is `auth()` reading cookies, not a bug.
+
+Tomorrow: AI-generated alt text for a single image (SPEC.md journey (c), step 1), building on the flags this screen now surfaces.

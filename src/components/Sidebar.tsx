@@ -6,12 +6,13 @@ import { usePathname } from "next/navigation";
 const NAV_ITEMS = [
   { href: "/sites", label: "Sites" },
   { href: "/pages", label: "Pages" },
+  { href: "/media", label: "Media" },
 ];
 
-// Later phases (SEO audit, image library, FAQ generation) each get their own
-// screen — listed now, disabled, so the shell's shape doesn't have to change
-// again when they land.
-const SOON_ITEMS = ["Media", "FAQs", "Dashboard"];
+// Later phases (FAQ generation, the cost/quality dashboard) each get their
+// own screen — listed now, disabled, so the shell's shape doesn't have to
+// change again when they land.
+const SOON_ITEMS = ["FAQs", "Dashboard"];
 
 export function Sidebar() {
   const pathname = usePathname();

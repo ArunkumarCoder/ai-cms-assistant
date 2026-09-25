@@ -507,4 +507,35 @@ Unit (Vitest): `src/lib/images/altTextQuality.test.ts` covers every flagging pat
 
 **Not verified live:** no browser automation is available in this environment (same constraint noted for every earlier Phase 1/2 UI, e.g. §8's Day 6 log) and no write-capable Sanity token exists here either, so the filter/sort/"show more" interactions weren't clicked through in a real browser. What *was* verified: `next build` compiles `/media` with no type errors and registers it as a dynamic (`ƒ`) route rendered on demand, identical to `/pages`' own build output — including the same expected "Dynamic server usage" log during static-generation probing, which is `auth()` reading cookies, not a bug.
 
-Tomorrow: AI-generated alt text for a single image (SPEC.md journey (c), step 1), building on the flags this screen now surfaces.
+## 13. Single-Image Alt-Text Generation (Day 17)
+
+SPEC.md journey (c), step 1: generate → review/edit → accept, for one image at a time. Batch mode (tomorrow) is explicitly "run this same logic many times reliably," so today's job was getting this single-image path exactly right rather than a quick version to be rebuilt tomorrow.
+
+### Almost everything this needed already existed
+
+`generateWithVision` (`AiProvider`, §3), the `alt-text-single`/`alt-text-batch` routing table entries (already pointing at OpenAI, never Groq — `../ai/routing.ts`, unchanged today), `altTextSchema`/`altTextJsonSchema` (Day 10), and cost logging (`aiClient`'s `runLogged` wraps every call type identically, and `pricing.ts` already has a `gpt-4o-mini` rate) were all built and tested before this task started. Today's actual work was one layer up: `src/lib/images/generateAltTextAction.ts` (prompt → `aiClient.generateWithVision("alt-text-single", ...)` → re-validate against `altTextSchema`, the same "re-validate the provider's own JSON" convention every other AI action already follows) and `src/lib/images/prompt.ts`'s `buildAltTextPrompt` (asks for one specific descriptive sentence, a confidence level, and a `needsReview` flag; includes the page title as context when the caller has one, since Media Library's own page-association join from Day 16 already resolves it). Task item 4 ("surface the same cost/provider logging") needed zero new code — it was already automatic the moment this action called through `aiClient` instead of a provider directly.
+
+### Never auto-saving means two actions, not one
+
+`generateAltTextAction` never touches Sanity — it only returns a suggestion. `src/lib/images/saveAltTextAction.ts` is the one place a suggestion (or a hand-edited version of one) ever reaches `CmsAdapter.updateImage`, and only ever called from an explicit "Accept" click. It picks between the two valid terminal states SPEC.md's original journey (c) "done state" already named: `altTextStatus: "ai-generated"` when the user accepted the suggestion byte-for-byte (a human approved it but didn't rewrite it — still worth a later second look), or `"reviewed"` when they edited it first (the strongest signal this app has for "a person actually looked at this"). There is no code path that persists `"ai-generated"` before a human has seen the text at all — that would be exactly the auto-save this task ruled out.
+
+### UI: one card, one small state machine
+
+`MediaLibraryCard.tsx` (split out of `MediaLibrary.tsx`, which now only handles filter/sort/windowing) holds a single `CardPhase` union — `idle | generating | reviewing | saving` — rather than a few independent booleans, so "generating and reviewing at once" isn't a state the type system allows. `reviewing` carries both the original AI suggestion and an editable `draft` string (initialized to the suggestion, freely editable) — accepting compares `draft` against the original to decide `ai-generated` vs. `reviewed`, exactly matching `saveAltTextAction`'s own contract. A low-confidence or `needsReview` suggestion gets a small inline note ("worth a careful read") rather than being hidden — the whole point of a review step is not to bury the one signal that says "look closer." On successful accept, the card resets to `idle` and `router.refresh()` re-fetches the Server Component's data — since `assessAltText` is a pure function re-run fresh on every load, a newly-accepted good alt text stops being flagged immediately, with no separate client-side state to keep in sync.
+
+### Failure handling (task item 5)
+
+None of these leave anything stuck, because nothing is written until Accept:
+
+- **Vision call fails or times out:** `withTimeoutAndRetry` (already existing, unchanged) retries a timeout or a 5xx/429 once, gives up on anything else; whatever reaches `generateAltTextAction` is caught and returned as `{ error }`. The card drops back to `idle` with an inline error and an unchanged "Generate alt text" button — retry is just clicking it again.
+- **Image URL inaccessible:** surfaces as an ordinary OpenAI API error (a 4xx, not retried per `retry.ts`'s own status-code table) — handled by the exact same catch block as any other failure, no special-casing needed.
+- **Response fails schema validation:** `altTextSchema.parse(result.data)` throws, caught the same way.
+- **The save itself fails:** `saveAltTextAction` returns `{ error }` without partially applying anything (a Sanity patch is atomic); the card stays in `reviewing` with the user's edited draft intact rather than reverting or clearing it, so a flaky save doesn't cost them their edit.
+
+### Testing
+
+Unit (Vitest): `src/lib/images/prompt.test.ts` (page title included/omitted, confidence/needsReview always requested), `generateAltTextAction.test.ts` (mocked `aiClient.generateWithVision` — asserts the `alt-text-single` call type, the image URL and prompt passed through, `userId`/`siteId` context threading with and without a connected site, a provider failure, and a schema-validation failure), `saveAltTextAction.test.ts` (mocked adapter — asserts `ai-generated` vs. `reviewed` status selection, trimming, rejecting empty text before ever calling the adapter, and an adapter failure returning `{ error }`).
+
+**Not verified live:** no write-capable Sanity token or browser automation exists in this environment (same standing constraint as every earlier UI day), so the actual Generate → review → Accept click-through wasn't exercised against a real image. What *was* verified: `next build` compiles cleanly with no type errors, matching every other route's build output.
+
+Tomorrow: the same generate/review/accept logic, run across the whole flagged backlog with a progress queue.

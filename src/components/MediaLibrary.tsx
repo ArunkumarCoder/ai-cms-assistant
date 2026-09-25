@@ -1,10 +1,9 @@
 "use client";
 
 import { useState } from "react";
-import Image from "next/image";
-import Link from "next/link";
 import type { AltTextAssessment } from "@/lib/images";
 import type { ImageAsset } from "@/types";
+import { MediaLibraryCard } from "./MediaLibraryCard";
 
 export interface MediaLibraryItem {
   image: ImageAsset;
@@ -19,18 +18,6 @@ export interface MediaLibraryItem {
 type Filter = "all" | "flagged";
 type Sort = "recent" | "flagged-first";
 const PAGE_SIZE = 24;
-
-const STATUS_LABEL: Record<ImageAsset["altTextStatus"], string> = {
-  missing: "Missing",
-  "ai-generated": "AI-suggested",
-  reviewed: "Reviewed",
-};
-
-const STATUS_CLASS: Record<ImageAsset["altTextStatus"], string> = {
-  missing: "bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-300",
-  "ai-generated": "bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300",
-  reviewed: "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300",
-};
 
 function sortItems(items: MediaLibraryItem[], sort: Sort): MediaLibraryItem[] {
   if (sort === "recent") {
@@ -121,51 +108,7 @@ export function MediaLibrary({ items }: { items: MediaLibraryItem[] }) {
         <>
           <ul className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {visible.map(({ image, assessment, page }) => (
-              <li
-                key={image.id}
-                className={`overflow-hidden rounded-lg border text-sm ${
-                  assessment.flagged
-                    ? "border-amber-300 dark:border-amber-900/60"
-                    : "border-zinc-200 dark:border-zinc-800"
-                }`}
-              >
-                <div className="relative aspect-video bg-zinc-100 dark:bg-zinc-900">
-                  <Image
-                    src={image.url}
-                    alt={image.altText ?? ""}
-                    fill
-                    sizes="(min-width: 1024px) 33vw, (min-width: 640px) 50vw, 100vw"
-                    className="object-cover"
-                  />
-                </div>
-                <div className="space-y-2 p-3">
-                  <span
-                    className={`inline-block rounded-full px-2 py-0.5 text-xs font-medium ${STATUS_CLASS[image.altTextStatus]}`}
-                  >
-                    {STATUS_LABEL[image.altTextStatus]}
-                  </span>
-                  <p className="text-zinc-700 dark:text-zinc-300">
-                    {image.altText ? (
-                      `"${image.altText}"`
-                    ) : (
-                      <span className="italic text-zinc-400 dark:text-zinc-500">No alt text</span>
-                    )}
-                  </p>
-                  {assessment.flagged && (
-                    <p className="text-xs text-amber-700 dark:text-amber-400">{assessment.reason}</p>
-                  )}
-                  <p className="text-xs text-zinc-500 dark:text-zinc-400">
-                    Used on{" "}
-                    {page ? (
-                      <Link href={`/pages/${page.slug}`} className="underline hover:no-underline">
-                        {page.title}
-                      </Link>
-                    ) : (
-                      "an unknown page"
-                    )}
-                  </p>
-                </div>
-              </li>
+              <MediaLibraryCard key={image.id} image={image} assessment={assessment} page={page} />
             ))}
           </ul>
 

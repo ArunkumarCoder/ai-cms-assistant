@@ -78,6 +78,38 @@ export function buildBlockRegenerationPrompt(
     .join("\n");
 }
 
+export interface FaqGenerationPromptInput {
+  title: string;
+  pageType: PageType;
+  contentBlocks: ContentBlock[];
+  brandVoice?: string;
+}
+
+// Feeds the model the page's actual headings/body text (same extraction
+// helpers analyzeSeoContent and buildSeoSuggestionsPrompt already use) so
+// generated FAQs are grounded in what the page actually says, per this
+// task's own instruction — an explicit "don't invent facts" line backs that
+// up, since a page-thin-on-content model would otherwise be tempted to pad
+// out the required 3-8 items (faqListSchema, Day 10) with generic filler.
+export function buildFaqGenerationPrompt(input: FaqGenerationPromptInput): string {
+  const headings = extractHeadingBlocks(input.contentBlocks);
+  const bodyText = extractParagraphText(input.contentBlocks);
+
+  return [
+    `Generate frequently-asked questions for a ${input.pageType} page titled "${input.title}".`,
+    input.brandVoice ? `Brand voice / style guide to follow:\n${input.brandVoice}` : null,
+    headings.length > 0
+      ? `Headings on the page:\n${headings.map((h) => `H${h.level}: ${h.text}`).join("\n")}`
+      : "The page has no heading blocks yet.",
+    bodyText ? `Body text:\n${bodyText}` : "The page has no body paragraphs yet.",
+    "Return 3 to 8 question/answer pairs that are directly grounded in the content above — " +
+      "don't invent features, facts, or claims the page doesn't already make. Keep each answer " +
+      "concise (1-3 sentences) and, if a brand voice was given above, consistent with it.",
+  ]
+    .filter((line): line is string => line !== null)
+    .join("\n");
+}
+
 export interface SeoSuggestionsPromptInput {
   title: string;
   metaDescription: string;

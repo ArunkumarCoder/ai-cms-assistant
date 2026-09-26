@@ -1,10 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
   buildBlockRegenerationPrompt,
+  buildFaqGenerationPrompt,
   buildPageGenerationPrompt,
   buildSeoSuggestionsPrompt,
 } from "./prompt";
-import type { PageBrief, SeoSuggestionsPromptInput } from "./prompt";
+import type { FaqGenerationPromptInput, PageBrief, SeoSuggestionsPromptInput } from "./prompt";
 
 describe("buildPageGenerationPrompt", () => {
   const brief: PageBrief = {
@@ -159,5 +160,46 @@ describe("buildSeoSuggestionsPrompt", () => {
   it("instructs the model to return a neutral internalLinking score", () => {
     const prompt = buildSeoSuggestionsPrompt(input);
     expect(prompt).toContain("always return exactly 50 (neutral) for internalLinking");
+  });
+});
+
+describe("buildFaqGenerationPrompt", () => {
+  const input: FaqGenerationPromptInput = {
+    title: "Local Plumbing Services in Austin",
+    pageType: "landing",
+    contentBlocks: [
+      { id: "1", type: "heading", order: 0, content: "Austin's Trusted Plumbers", metadata: { level: 2 } },
+      { id: "2", type: "paragraph", order: 1, content: "We fix leaks, clogs, and installs, same day." },
+    ],
+  };
+
+  it("includes the title, page type, heading outline, and body text", () => {
+    const prompt = buildFaqGenerationPrompt(input);
+    expect(prompt).toContain(input.title);
+    expect(prompt).toContain("landing");
+    expect(prompt).toContain("H2: Austin's Trusted Plumbers");
+    expect(prompt).toContain("We fix leaks, clogs, and installs, same day.");
+  });
+
+  it("flags empty headings and body content explicitly rather than omitting them", () => {
+    const prompt = buildFaqGenerationPrompt({ ...input, contentBlocks: [] });
+    expect(prompt).toContain("no heading blocks yet");
+    expect(prompt).toContain("no body paragraphs yet");
+  });
+
+  it("tells the model not to invent facts the page doesn't already state", () => {
+    const prompt = buildFaqGenerationPrompt(input);
+    expect(prompt).toMatch(/don't invent/i);
+  });
+
+  it("includes the site's brand voice when set", () => {
+    const prompt = buildFaqGenerationPrompt({ ...input, brandVoice: "Warm and plain-spoken." });
+    expect(prompt).toContain("Brand voice / style guide to follow:");
+    expect(prompt).toContain("Warm and plain-spoken.");
+  });
+
+  it("omits the brand voice line when the site has none set", () => {
+    const prompt = buildFaqGenerationPrompt(input);
+    expect(prompt).not.toContain("Brand voice");
   });
 });

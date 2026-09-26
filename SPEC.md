@@ -577,3 +577,41 @@ Unit (Vitest): `src/lib/images/concurrency.test.ts` (every item processed exactl
 **Not verified live:** same standing constraint as every earlier UI day — no browser automation or write-capable Sanity token in this environment. What *was* verified: `next build` compiles cleanly with no type errors.
 
 Tomorrow starts FAQ generation — the second AI feature of Phase 4.
+
+## 15. FAQ Generation (Day 19)
+
+SPEC.md journey (d): generate → edit/reorder/delete → save, on the page detail view (`/pages/[slug]`) — the only editor an already-saved page has, since (per §9's own note) there's still no separate `/pages/[slug]/edit` route reopening `GeneratePageForm`'s draft state. `FaqEditor.tsx` replaces what was a static, read-only FAQ list on that page with an editable one, sitting alongside `SeoPanel` as its own independent save surface.
+
+### Reusing Day 10's schema and Day 2's modeling exactly as they already existed
+
+`generateFaqListAction.ts` calls `aiClient.generateStructured("faq-generation", ...)` against `faqListSchema`/`faqListJsonSchema` — both already built and tested on Day 10, unchanged today. Persistence goes through `CmsAdapter.updatePage`'s existing `faqItems` field (`saveFaqItemsAction.ts`), which already writes into the embedded `page.faqItems[]` array Day 2 chose over a standalone referenced document type — no adapter or schema change was needed for either side of this feature; today's actual work was the prompt, the two thin Server Actions around already-existing capabilities, and the editable UI.
+
+### Prompt is grounded in the page's real content (task item 1)
+
+`buildFaqGenerationPrompt` (`src/lib/pages/prompt.ts`) feeds the model the page's actual headings and body text — the same `extractHeadingBlocks`/`extractParagraphText` helpers `buildSeoSuggestionsPrompt` already uses — plus the site's brand voice (Day 13), so generated answers read consistently with everything else this app generates for that site. The prompt explicitly instructs the model not to invent facts the page doesn't already state, backing up the "grounded, not generic boilerplate" requirement with more than just good input data.
+
+### Refusing to generate rather than generating filler
+
+`faqListSchema` requires 3-8 items (Day 10) — on a page with too little body content, that requirement would force the model to pad real answers out with invented or generic filler to hit the minimum. `generateFaqListAction` checks the page's body word count (`extractWords`, the same tokenizer `src/lib/seo/checks.ts` and the Day 14 quality score already use) before ever calling the AI, and refuses with a plain, actionable message below a 40-word floor — this task's "too little content to generate meaningful FAQs" edge case (item 5), handled by not spending an AI call on a request likely to hallucinate rather than by trying to clean up its output afterward.
+
+### Never auto-published; append, not replace, on generate
+
+Nothing reaches Sanity until "Save FAQs" is clicked — matching Day 12's draft/review pattern (item 3): generated items land in local component state exactly like `GeneratePageForm`'s draft blocks did, editable and re-orderable before anything is persisted. Clicking "Generate FAQs" *appends* newly generated items to whatever's already in the local list rather than replacing it — never destructive, since deleting unwanted items afterward (including all the way down to zero, task item 5) is already how the editor works.
+
+### Editing, reordering, and the zero-FAQ edge case
+
+Each FAQ item is an inline `question`/`answer` pair with up/down move buttons (plain buttons, not drag-and-drop — task item 2 explicitly allows either, and this is the simpler one to build well and keep accessible) and a delete button. An empty list renders its own explicit message ("save with none — that's a valid choice too") rather than looking like a loading or broken state, and `saveFaqItemsAction` passes `faqItems: []` straight through to `CmsAdapter.updatePage` exactly like any other value — `UpdatePageInput` only skips a field when it's `undefined`, so an empty array is a real "clear everything" write, not a no-op.
+
+`source` (`"ai-generated"` vs. `"manual"`) reflects an item's origin and is set once, when it's created (generated vs. hand-typed via a future "Add FAQ" affordance, not built today since nothing in this task asked for manually-authored-from-scratch items) — editing a generated item's text afterward doesn't flip it to `"manual"`, since the field describes provenance (matching its own name), not a review/approval workflow the way `ImageAsset.altTextStatus` does (Day 17's `"ai-generated"` vs. `"reviewed"` distinction is a different, deliberately separate concept for a different domain type).
+
+### Validation and failure handling (task item 5)
+
+`saveFaqItemsAction` rejects a save if any item has an empty (or whitespace-only) question or answer, before ever calling the adapter — Sanity's own `Rule.required()` on the `faqItem` schema is a Studio-side validation warning, not a server-enforced constraint on the raw mutate API this adapter uses, so this app has to be the one to actually stop empty junk from being written. A generation failure (AI error, or the too-little-content refusal above) is caught and shown inline without touching whatever's already in the local list; a save failure is caught and shown inline too, leaving every edit exactly as the user left it rather than reverting or clearing anything.
+
+### Testing
+
+Unit (Vitest): `prompt.test.ts` gained `buildFaqGenerationPrompt` cases (title/page-type/heading-outline/body-text inclusion, explicit "no headings/body yet" flags, the "don't invent facts" instruction, brand-voice threading). `generateFaqListAction.test.ts` (call type, prompt/context threading, the too-little-content refusal never reaching the AI client, a provider failure, and a schema-validation failure). `saveFaqItemsAction.test.ts` (persists a normal list, persists an empty list as a real write rather than a no-op, rejects an empty question/answer before calling the adapter, and surfaces an adapter failure).
+
+**Not verified live:** no browser automation or write-capable Sanity token in this environment, same standing constraint as every earlier UI day. What *was* verified: `next build` compiles cleanly with no type errors.
+
+Tomorrow adds FAQPage JSON-LD schema markup alongside the visible FAQ content this feature now generates and persists.

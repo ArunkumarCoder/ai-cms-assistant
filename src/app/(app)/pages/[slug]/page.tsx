@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { ContentBlocks } from "@/components/ContentBlocks";
+import { FaqEditor } from "@/components/FaqEditor";
 import { SeoPanel } from "@/components/SeoPanel";
 import { getAdapterForCurrentUser, NoSiteConnectedError } from "@/lib/cms";
 import type { Page } from "@/types";
@@ -87,29 +88,7 @@ export default async function PageDetailRoute({
         )}
       </div>
 
-      <section className="mt-12">
-        <h2 className="text-xl font-semibold">FAQs</h2>
-        {page.faqItems.length > 0 ? (
-          <dl className="mt-4 space-y-4">
-            {page.faqItems.map((faq) => (
-              <div
-                key={faq.id}
-                className="rounded-lg border border-zinc-200 p-4 dark:border-zinc-800"
-              >
-                <dt className="font-medium">{faq.question}</dt>
-                <dd className="mt-1 text-zinc-600 dark:text-zinc-400">
-                  {faq.answer}
-                </dd>
-                {faq.source === "ai-generated" && (
-                  <p className="mt-2 text-xs text-zinc-400">AI-generated</p>
-                )}
-              </div>
-            ))}
-          </dl>
-        ) : (
-          <p className="mt-2 text-zinc-500 dark:text-zinc-400">No FAQs yet.</p>
-        )}
-      </section>
+      <FaqEditor page={page} />
     </article>
   );
 }

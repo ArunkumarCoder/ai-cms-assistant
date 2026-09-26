@@ -538,4 +538,42 @@ Unit (Vitest): `src/lib/images/prompt.test.ts` (page title included/omitted, con
 
 **Not verified live:** no write-capable Sanity token or browser automation exists in this environment (same standing constraint as every earlier UI day), so the actual Generate → review → Accept click-through wasn't exercised against a real image. What *was* verified: `next build` compiles cleanly with no type errors, matching every other route's build output.
 
-Tomorrow: the same generate/review/accept logic, run across the whole flagged backlog with a progress queue.
+## 14. Batch Alt-Text Generation (Day 18)
+
+"Run the single-image flow many times with a queue on top" (this task's own framing, item 3) — not a second implementation. Everything from Day 17 (`generateAltTextAction`, `saveAltTextAction`, the review-before-save contract) is reused verbatim; today's work is a queue and a concurrency-limited runner around it.
+
+### Lifting state up so there's exactly one code path, not two
+
+Yesterday's `MediaLibraryCard` owned its own `useState` for generate/review/accept. That had to change: the batch queue needed to drive the *same* state a card's own button drives, or "reuse yesterday's logic" would only be true in spirit, not in code. `phases` (`Record<imageId, CardPhase>`) now lives in `MediaLibrary.tsx`; `MediaLibraryCard` is purely presentational (`phase` + four callback props), and `runGenerate`/`runAccept` are two plain async functions defined once in `MediaLibrary.tsx` that both a single card's own button *and* the batch runner call identically. A single click and "run this for all 40 flagged images" are the same function, called once vs. many times through a pool — never a parallel branch.
+
+`CardPhase` (`src/lib/images/batchQueue.ts`) gained two states beyond yesterday's four: `"saved"` (distinct from `"idle"` — see below) and a `reviewing.error` field (a failed save now stays in `reviewing` with the error attached, rather than needing a second error-tracking map alongside `phases`).
+
+### The concurrency pool is the entire rate-limiting story (task item 6)
+
+`runWithConcurrency` (`src/lib/images/concurrency.ts`) is a plain worker pool: at most `GENERATE_CONCURRENCY` (2) vision calls in flight at once, regardless of batch size. Deliberately not a token-bucket/scheduler — with a small pool, even a 40-image batch can't burst the provider, and any 429 that does slip through is still caught and retried by `../ai/retry.ts`'s existing exponential backoff underneath (unchanged today). Accepting suggestions in bulk uses a separate, wider pool (`ACCEPT_CONCURRENCY`, 4) — Sanity patches are cheap; there's no reason to rate-limit them as cautiously as a vision API call. A worker that throws is caught inside the pool itself so one unexpected bug can't abort the rest of the batch (belt-and-suspenders — `runGenerate`/`runAccept` already resolve to a state update rather than rejecting, mirroring every Server Action's `{ data } | { error }` convention, so this should never actually trigger).
+
+### Partial failure and retry (task item 4)
+
+The batch's roster (`batchIds`, in `MediaLibrary.tsx`) is a **fixed snapshot** taken once when "Generate alt text for all flagged" is clicked, and it never shrinks — not even when "Retry failed" reprocesses just the failed subset. This was a real design decision, not an accident: an earlier draft had retry replace the roster with just the failed ids, which reset the progress panel's "N of 40 processed" back down to "0 of 2," discarding the fact that 38 others had already succeeded. Instead, `handleRetryFailed` calls the exact same `processIds` used for the initial run, scoped to `selectByPhase(batchIds, phases, "failed")`, while `batchIds` itself stays untouched — `computeBatchProgress` re-derives the whole summary from the fixed roster plus the live `phases` map every render, so a retry's progress is additive, not a reset.
+
+`selectEligibleForBatch` is what makes "Generate all flagged" itself idempotent/re-clickable: it only selects images that are flagged *and* currently `idle` or `failed` — anything already `generating`, holding an unsaved suggestion (`reviewing`/`saving`), or already `saved` this session is skipped, so clicking the button again after a partial run never clobbers in-progress work.
+
+### Why "saved" exists as its own phase
+
+Once a suggestion in `reviewing` is accepted, the naive move is back to `{ name: "idle" }` — but `computeBatchProgress` derives "done" purely from `phases`, and `"idle"` also means "never started." Without a distinct `"saved"` phase, individually accepting an item mid-batch (before the eventual `router.refresh()` lands) would make the progress panel's completed count *drop*, looking like work reverted rather than finished. `"saved"` renders identically to `"idle"` in the card itself (nothing left to do until the refresh brings fresh server data) but keeps the batch panel's arithmetic honest in the meantime.
+
+### Review stays the default; "accept all" is the opt-in shortcut (task item 5)
+
+Generation only ever produces `reviewing` state — nothing is written to Sanity until an explicit accept, exactly like Day 17, whether that generation came from one click or forty. `BatchAltTextQueue.tsx`'s "Accept all N suggested" button is available once anything has reached `reviewing`, but it's an additional action next to the per-card Accept/Discard buttons already visible in the grid below, not a replacement for them — a user can review and hand-edit every single one individually and never touch it. Clicking it runs `runAccept` (the identical function, again) over whatever's currently `reviewing`, using each item's *current* draft — including any the user had already hand-edited before clicking.
+
+### The progress panel (task item 2)
+
+`BatchAltTextQueue.tsx` is a compact, independently-scrollable roster (`max-h-64 overflow-y-auto`) — a small thumbnail, status dot, and label per image — deliberately separate from the full review cards in the grid, which would be unreadable at dozens of items with a textarea each. It reads `items`/`batchIds`/`phases` as plain props (no state of its own) and is filter/pagination-independent: it always covers the full batch roster regardless of what the grid below is currently showing, since a user might filter the grid to "All" mid-batch without losing sight of progress.
+
+### Testing
+
+Unit (Vitest): `src/lib/images/concurrency.test.ts` (every item processed exactly once, concurrency never exceeds the cap, one worker's rejection doesn't stop the rest, empty input, cap larger than the item count), `src/lib/images/batchQueue.test.ts` (eligibility selection — including the "already reviewing shouldn't be clobbered" and "failed is eligible again" cases — phase-filtering, and progress computation, including the specific regression this task's design surfaced: a roster's total must not shrink when a retry only reprocesses the failed subset, and an accepted item must count as done, not revert to queued). No component-level tests — this codebase has no React testing library anywhere (confirmed before starting), so `MediaLibrary`/`MediaLibraryCard`/`BatchAltTextQueue` follow the same precedent as `SeoPanel`/`GeneratePageForm`: orchestration and rendering stay untested directly, with every piece of actual logic they call extracted into a plain, tested function first.
+
+**Not verified live:** same standing constraint as every earlier UI day — no browser automation or write-capable Sanity token in this environment. What *was* verified: `next build` compiles cleanly with no type errors.
+
+Tomorrow starts FAQ generation — the second AI feature of Phase 4.

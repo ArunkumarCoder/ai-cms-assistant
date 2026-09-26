@@ -1,14 +1,9 @@
 "use client";
 
-import { useState } from "react";
-import { useRouter } from "next/navigation";
 import Image from "next/image";
 import Link from "next/link";
 import type { ImageAsset } from "@/types";
-import type { AltText } from "@/lib/ai";
-import type { AltTextAssessment } from "@/lib/images";
-import { generateAltTextAction } from "@/lib/images/generateAltTextAction";
-import { saveAltTextAction } from "@/lib/images/saveAltTextAction";
+import type { AltTextAssessment, CardPhase } from "@/lib/images";
 
 const STATUS_LABEL: Record<ImageAsset["altTextStatus"], string> = {
   missing: "Missing",
@@ -22,69 +17,31 @@ const STATUS_CLASS: Record<ImageAsset["altTextStatus"], string> = {
   reviewed: "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300",
 };
 
-// Every state this card can be in — a plain union rather than several
-// booleans so "generating and reviewing at once" or "saving with no draft
-// text" can't happen as an invalid combination of independently-set flags.
-type CardPhase =
-  | { name: "idle" }
-  | { name: "generating" }
-  | { name: "reviewing"; suggestion: AltText; draft: string }
-  | { name: "saving"; suggestion: AltText; draft: string };
-
 interface MediaLibraryCardProps {
   image: ImageAsset;
   assessment: AltTextAssessment;
   page: { title: string; slug: string } | null;
+  // Phase lives in the parent (MediaLibrary.tsx), not here — the batch queue
+  // needs to drive the exact same generate/review/accept flow this card
+  // renders, so there is exactly one phase per image, not one owned by this
+  // card and a second shadow copy the queue tracks separately.
+  phase: CardPhase;
+  onGenerate: () => void;
+  onDraftChange: (value: string) => void;
+  onAccept: () => void;
+  onDiscard: () => void;
 }
 
-export function MediaLibraryCard({ image, assessment, page }: MediaLibraryCardProps) {
-  const router = useRouter();
-  const [phase, setPhase] = useState<CardPhase>({ name: "idle" });
-  const [error, setError] = useState<string | null>(null);
-
-  async function handleGenerate() {
-    setError(null);
-    setPhase({ name: "generating" });
-    const result = await generateAltTextAction({ imageUrl: image.url, pageTitle: page?.title });
-
-    if ("error" in result) {
-      setError(result.error);
-      setPhase({ name: "idle" });
-      return;
-    }
-    setPhase({ name: "reviewing", suggestion: result.altText, draft: result.altText.altText });
-  }
-
-  function handleDraftChange(value: string) {
-    setPhase((current) =>
-      current.name === "reviewing" ? { ...current, draft: value } : current,
-    );
-  }
-
-  function handleDiscard() {
-    setError(null);
-    setPhase({ name: "idle" });
-  }
-
-  async function handleAccept() {
-    if (phase.name !== "reviewing") return;
-    setError(null);
-    const { suggestion, draft } = phase;
-    setPhase({ name: "saving", suggestion, draft });
-
-    const cmsAssetId = image.cmsAssetId ?? image.id;
-    const edited = draft.trim() !== suggestion.altText.trim();
-    const result = await saveAltTextAction({ cmsAssetId, altText: draft, edited });
-
-    if ("error" in result) {
-      setError(result.error);
-      setPhase({ name: "reviewing", suggestion, draft });
-      return;
-    }
-    setPhase({ name: "idle" });
-    router.refresh();
-  }
-
+export function MediaLibraryCard({
+  image,
+  assessment,
+  page,
+  phase,
+  onGenerate,
+  onDraftChange,
+  onAccept,
+  onDiscard,
+}: MediaLibraryCardProps) {
   const isReviewing = phase.name === "reviewing" || phase.name === "saving";
 
   return (
@@ -138,23 +95,24 @@ export function MediaLibraryCard({ image, assessment, page }: MediaLibraryCardPr
             </p>
             <textarea
               value={phase.draft}
-              onChange={(e) => handleDraftChange(e.target.value)}
+              onChange={(e) => onDraftChange(e.target.value)}
               disabled={phase.name === "saving"}
               rows={3}
               className="w-full rounded-lg border border-violet-300 bg-white px-2 py-1.5 text-sm text-zinc-900 disabled:opacity-60 dark:border-violet-800 dark:bg-zinc-900 dark:text-zinc-100"
             />
             {(phase.suggestion.needsReview || phase.suggestion.confidence === "low") && (
               <p className="text-xs text-violet-700 dark:text-violet-400">
-                {phase.suggestion.confidence === "low"
-                  ? "Low confidence — "
-                  : ""}
+                {phase.suggestion.confidence === "low" ? "Low confidence — " : ""}
                 Worth a careful read before accepting.
               </p>
+            )}
+            {phase.name === "reviewing" && phase.error && (
+              <p className="text-xs text-red-700 dark:text-red-400">{phase.error}</p>
             )}
             <div className="flex items-center gap-2">
               <button
                 type="button"
-                onClick={handleAccept}
+                onClick={onAccept}
                 disabled={phase.name === "saving" || !phase.draft.trim()}
                 className="rounded-full bg-violet-600 px-3 py-1 text-xs font-medium text-white hover:bg-violet-700 disabled:opacity-60"
               >
@@ -162,7 +120,7 @@ export function MediaLibraryCard({ image, assessment, page }: MediaLibraryCardPr
               </button>
               <button
                 type="button"
-                onClick={handleDiscard}
+                onClick={onDiscard}
                 disabled={phase.name === "saving"}
                 className="rounded-full border border-zinc-300 px-3 py-1 text-xs font-medium hover:bg-zinc-50 disabled:opacity-60 dark:border-zinc-700 dark:hover:bg-zinc-800"
               >
@@ -175,7 +133,7 @@ export function MediaLibraryCard({ image, assessment, page }: MediaLibraryCardPr
         {!isReviewing && (
           <button
             type="button"
-            onClick={handleGenerate}
+            onClick={onGenerate}
             disabled={phase.name === "generating"}
             className="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-1.5 text-xs font-medium hover:bg-zinc-50 disabled:opacity-60 dark:border-zinc-700 dark:hover:bg-zinc-800"
           >
@@ -183,7 +141,9 @@ export function MediaLibraryCard({ image, assessment, page }: MediaLibraryCardPr
           </button>
         )}
 
-        {error && <p className="text-xs text-red-700 dark:text-red-400">{error}</p>}
+        {phase.name === "failed" && (
+          <p className="text-xs text-red-700 dark:text-red-400">{phase.message}</p>
+        )}
       </div>
     </li>
   );

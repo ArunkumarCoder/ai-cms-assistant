@@ -7,3 +7,12 @@ export { assessAltText } from "./altTextQuality";
 export type { AltTextAssessment } from "./altTextQuality";
 export { buildAltTextPrompt } from "./prompt";
 export type { AltTextPromptContext } from "./prompt";
+export { runWithConcurrency } from "./concurrency";
+export {
+  computeBatchProgress,
+  IDLE_PHASE,
+  phaseFor,
+  selectByPhase,
+  selectEligibleForBatch,
+} from "./batchQueue";
+export type { BatchProgress, CardPhase } from "./batchQueue";

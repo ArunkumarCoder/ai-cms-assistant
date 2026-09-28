@@ -4,6 +4,7 @@ import { ContentBlocks } from "@/components/ContentBlocks";
 import { FaqEditor } from "@/components/FaqEditor";
 import { SeoPanel } from "@/components/SeoPanel";
 import { getAdapterForCurrentUser, NoSiteConnectedError } from "@/lib/cms";
+import { buildFaqPageJsonLd, serializeJsonLd } from "@/lib/faq";
 import type { Page } from "@/types";
 
 async function getPage(
@@ -53,8 +54,24 @@ export default async function PageDetailRoute({
     notFound();
   }
 
+  // Derived from `page.faqItems` — the persisted data this Server Component
+  // just fetched — never from FaqEditor's local draft state, so a generated
+  // but not-yet-saved FAQ can't leak into live structured data (SPEC.md
+  // §15's "never auto-published" carries over here). No caching anywhere in
+  // this route (§5) means this recomputes fresh on every request, so it's
+  // automatically back in sync the moment FaqEditor's "Save FAQs" triggers
+  // router.refresh() — no separate invalidation to wire up.
+  const faqPageJsonLd = buildFaqPageJsonLd(page.faqItems);
+
   return (
     <article className="mx-auto w-full max-w-2xl px-6 py-16">
+      {faqPageJsonLd && (
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{ __html: serializeJsonLd(faqPageJsonLd) }}
+        />
+      )}
+
       <Link href="/pages" className="text-sm text-zinc-500 hover:underline">
         ← Back to pages
       </Link>

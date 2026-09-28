@@ -615,3 +615,35 @@ Unit (Vitest): `prompt.test.ts` gained `buildFaqGenerationPrompt` cases (title/p
 **Not verified live:** no browser automation or write-capable Sanity token in this environment, same standing constraint as every earlier UI day. What *was* verified: `next build` compiles cleanly with no type errors.
 
 Tomorrow adds FAQPage JSON-LD schema markup alongside the visible FAQ content this feature now generates and persists.
+
+## 16. FAQPage JSON-LD Schema Markup (Day 20) — closes Phase 4
+
+The part of FAQ generation that actually earns its SEO keep. SPEC.md §3 originally listed this as AI call #7 ("FAQ schema/JSON-LD formatting"), flagged from Day 1 as unbuilt with a note that it might merge into the FAQ-generation call rather than stay separate. It's resolved today, but not as an AI call at all: `buildFaqPageJsonLd` (`src/lib/faq/jsonLd.ts`) is a pure, deterministic transform of `FaqItem[]` — the exact same data `FaqEditor` already generated, edited, and persisted on Day 19 — into schema.org's `FAQPage` shape. Mirrors how the Day 14 composite quality score resolved its own once-planned AI call (#8) the same way: a call already sitting unbuilt in the inventory turned out not to need a model at all once the data it would have summarized already existed.
+
+### The transform and its one real edge case
+
+`buildFaqPageJsonLd` sorts by `FaqItem.order`, filters out any item with a blank question or answer (defensive — `saveFaqItemsAction` already rejects those at save time, but a page edited directly in Studio bypasses this app's own validation), and returns `null` — not an empty `mainEntity: []` — when nothing's left. Google's guidelines require at least one real question; an empty shell isn't valid markup, so the page renders no script tag at all rather than a technically-present-but-empty one.
+
+### Where it's injected, and why staleness can't happen
+
+Per Next's own current guidance (`node_modules/next/dist/docs/01-app/02-guides/json-ld.md`, read before writing this — this project's AGENTS.md requires checking bundled docs for anything Next-specific rather than trusting training data): a plain `<script type="application/ld+json">` rendered directly in the page component, not through `next/head` or `generateMetadata`. `/pages/[slug]/page.tsx` computes it from `page.faqItems` — the Server Component's own freshly-fetched data — never from `FaqEditor`'s local draft state, so a generated-but-not-yet-saved FAQ can never leak into live structured data (the same "never auto-published" boundary Day 19 established for the visible content carries over to the markup describing it). This route already fetches with no caching (§5) and `FaqEditor`'s "Save FAQs" already calls `router.refresh()` (Day 19) — so the script tag recomputes fresh on every request and is back in sync the moment a save completes, with no separate cache-invalidation path to build or forget.
+
+### Sanitization
+
+`serializeJsonLd` applies exactly the escaping Next's own guide calls out as necessary: `JSON.stringify(data).replace(/</g, "\\u003c")`, run once in a shared helper rather than inline at each call site so it can't be forgotten at a future second one. Plain `JSON.stringify` alone doesn't stop a `</script>` sequence inside a question or answer from prematurely closing the surrounding script tag — a real HTML-injection vector for any inline JSON-LD, not specific to this app. Tested directly: a deliberately hostile answer containing `</script><script>alert(1)</script>` serializes with zero raw `<` characters left in the output, while still round-tripping back to the exact original text once parsed (this is HTML-context escaping, not data corruption).
+
+### Manual validation against a real page (task item 3)
+
+Pulled the real, already-saved `faqItems` from the seeded demo project's flagship landing page directly from the live (public, read-only) Sanity API — not a hand-crafted fixture — and ran them through `buildFaqPageJsonLd`/`serializeJsonLd` to inspect the actual output. Checked against Google's FAQPage structured-data requirements by hand: valid JSON; correct `@context`/top-level `@type`; a non-empty `mainEntity` array; each entry `@type: "Question"` with a non-empty `name`; a single (not array-valued) `acceptedAnswer` object per question, each with `@type: "Answer"` and non-empty `text`. No cloaking risk either, by construction — the markup is generated from the identical `faqItems` `FaqEditor` renders visibly, never authored separately, so visible content and structured data can't drift apart.
+
+One factual caveat worth recording for anyone reviewing this later: Google's own eligibility policy (as of a 2023 update) now generally restricts the FAQPage *rich result* in search to well-known, authoritative government and health sites — most sites, including this one, won't get the visible rich snippet even with fully valid markup. That's a search-result-eligibility policy, not a markup-correctness issue, and it's exactly what this task asked to validate; the markup itself is correct and other consumers (AI crawlers, other search engines, the generic [Schema.org validator](https://validator.schema.org/)) aren't subject to that same policy.
+
+### Testing
+
+Unit (Vitest): `src/lib/faq/jsonLd.test.ts` — a normal FAQ list produces the exact expected shape; ordering follows `FaqItem.order` regardless of input array order; an empty list (and a list where every item is blank) returns `null`; a partially-blank list filters just the blank entries; whitespace is trimmed; `serializeJsonLd` produces parseable JSON and specifically defeats a `</script>`-embedding attempt while preserving the original text through a full serialize/parse round trip.
+
+**Phase 4 polish pass (task item 4):** re-read the whole chain fresh — `MediaLibrary`/`MediaLibraryCard`/`BatchAltTextQueue`'s shared `phases` state (Day 18), `generateAltTextAction`/`saveAltTextAction` (Day 17), and `FaqEditor` (Day 19) — specifically looking for rough edges before today's demo-readiness deadline. Nothing needed fixing: the shared-phase architecture from Day 18 already prevents the one race condition worth checking (a card's own "Generate" button and the batch queue targeting the same image at once) by construction, since both read and disable off the identical `phases` map rather than independent state.
+
+**Not verified live:** no browser automation or write-capable Sanity token in this environment, same standing constraint as every earlier UI day — the actual rendered `<script>` tag wasn't inspected in a live browser's DOM or run through Google's Rich Results Test (which requires a publicly reachable URL). What *was* verified: the exact JSON-LD payload the app would emit for a real page, checked by hand against Google's documented field requirements, plus `next build` compiling cleanly.
+
+This closes Phase 4 (media library → single alt-text generation → batch alt-text generation with a progress queue → FAQ generation with inline review → FAQPage schema markup). Phase 5 starts next: the diff UI for AI edits to existing content.

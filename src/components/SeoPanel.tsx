@@ -38,6 +38,12 @@ export function SeoPanel({ page }: SeoPanelProps) {
   const [suggestions, setSuggestions] = useState<SeoSuggestions | null>(null);
   const [aiPending, setAiPending] = useState(false);
   const [aiError, setAiError] = useState<string | null>(null);
+  // Which suggestion diffs (keyed by check.id) the user has explicitly
+  // rejected this round — reset on every fresh "Get AI suggestions" call.
+  // Accepting a suggestion needs no entry here: once `title`/`metaDescription`
+  // equal the suggested value, the diff itself reads as unchanged and
+  // SeoChecklist's DiffView stops rendering it on its own.
+  const [dismissedSuggestionIds, setDismissedSuggestionIds] = useState<Set<string>>(new Set());
 
   const [savePending, setSavePending] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
@@ -128,6 +134,11 @@ export function SeoPanel({ page }: SeoPanelProps) {
       return;
     }
     setSuggestions(result.suggestions);
+    setDismissedSuggestionIds(new Set());
+  }
+
+  function handleDismissSuggestion(id: string) {
+    setDismissedSuggestionIds((prev) => new Set(prev).add(id));
   }
 
   function handleApplyTitle(value: string) {
@@ -231,10 +242,14 @@ export function SeoPanel({ page }: SeoPanelProps) {
 
       <SeoChecklist
         analysis={analysis}
+        title={title}
+        metaDescription={metaDescription}
         suggestions={suggestions}
+        dismissedSuggestionIds={dismissedSuggestionIds}
         onCheckClick={handleCheckClick}
         onApplyTitle={handleApplyTitle}
         onApplyMetaDescription={handleApplyMetaDescription}
+        onDismissSuggestion={handleDismissSuggestion}
       />
 
       {saveError && (

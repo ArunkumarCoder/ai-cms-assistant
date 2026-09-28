@@ -33,10 +33,12 @@ const EMPTY_BRIEF: PageBrief = {
 interface DraftBlockState {
   localId: string;
   block: PageDraftBlock;
-  // Set on any manual edit, cleared on any AI-sourced write (initial
-  // generation or a successful regeneration) — gates the "you'll overwrite
-  // a hand edit" confirmation before regenerating.
-  edited: boolean;
+  // A regenerated block awaiting accept/reject (SPEC.md §17) — never applied
+  // directly. While this is set, DraftBlockEditor shows a diff against
+  // `block` (the current, possibly hand-edited value) instead of the normal
+  // editable fields, so there's no window where a hand edit and a pending
+  // suggestion could both be in flight for the same block at once.
+  suggestion: PageDraftBlock | null;
   pending: boolean;
   error: string | null;
 }
@@ -54,7 +56,7 @@ function toDraftBlocks(blocks: PageDraftBlock[]): DraftBlockState[] {
   return blocks.map((block) => ({
     localId: crypto.randomUUID(),
     block,
-    edited: false,
+    suggestion: null,
     pending: false,
     error: null,
   }));
@@ -149,17 +151,16 @@ export function GeneratePageForm() {
     if (!draft) return;
     const current = draft.blocks.find((b) => b.localId === localId);
     if (!current) return;
-    if (
-      current.edited &&
-      !window.confirm("This block was edited by hand — regenerate and overwrite it?")
-    ) {
-      return;
-    }
 
     setDraft((prev) => prev && updateBlock(prev, localId, { pending: true, error: null }));
 
+    // regenerateBlockAction never persists anything (SPEC.md §17) — this
+    // only ever produces a suggestion to review, never touches Sanity. Sent
+    // from `current.block`, the live draft state at this exact moment
+    // (already reflecting any prior hand edits), not some earlier cached
+    // version — so a block edited by hand since the last AI touch is
+    // regenerated from what it actually says now.
     const result = await regenerateBlockAction({
-      cmsDocumentId: cmsDocumentId ?? undefined,
       pageTitle: draft.title,
       metaDescription: draft.metaDescription,
       targetKeyword: draft.targetKeyword,
@@ -175,13 +176,21 @@ export function GeneratePageForm() {
       if ("error" in result) {
         return updateBlock(prev, localId, { pending: false, error: result.error });
       }
-      return updateBlock(prev, localId, {
-        pending: false,
-        error: null,
-        edited: false,
-        block: result.block,
-      });
+      return updateBlock(prev, localId, { pending: false, error: null, suggestion: result.block });
     });
+  }
+
+  function handleAcceptSuggestion(localId: string) {
+    setDraft((prev) => {
+      if (!prev) return prev;
+      const current = prev.blocks.find((b) => b.localId === localId);
+      if (!current?.suggestion) return prev;
+      return updateBlock(prev, localId, { block: current.suggestion, suggestion: null });
+    });
+  }
+
+  function handleRejectSuggestion(localId: string) {
+    setDraft((prev) => prev && updateBlock(prev, localId, { suggestion: null }));
   }
 
   if (!draft) {
@@ -329,12 +338,13 @@ export function GeneratePageForm() {
           <DraftBlockEditor
             key={b.localId}
             block={b.block}
+            suggestion={b.suggestion}
             pending={b.pending}
             error={b.error}
-            onChange={(block) =>
-              setDraft((prev) => prev && updateBlock(prev, b.localId, { block, edited: true }))
-            }
+            onChange={(block) => setDraft((prev) => prev && updateBlock(prev, b.localId, { block }))}
             onRegenerate={() => handleRegenerate(b.localId)}
+            onAcceptSuggestion={() => handleAcceptSuggestion(b.localId)}
+            onRejectSuggestion={() => handleRejectSuggestion(b.localId)}
           />
         ))}
       </div>

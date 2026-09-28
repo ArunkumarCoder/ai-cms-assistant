@@ -1,7 +1,7 @@
 "use server";
 
 import { requireUser } from "@/lib/auth/dal";
-import { getActiveSiteForCurrentUser, getAdapterForCurrentUser } from "@/lib/cms";
+import { getActiveSiteForCurrentUser } from "@/lib/cms";
 import {
   aiClient,
   blockRegenerationJsonSchema,
@@ -10,13 +10,8 @@ import {
 import type { PageDraftBlock } from "@/lib/ai/schemas/pageDraft";
 import type { ContentBlock, PageType } from "@/types";
 import { buildBlockRegenerationPrompt } from "./prompt";
-import { draftBlockToContentBlock } from "./mapping";
 
 export interface RegenerateBlockInput {
-  // Present once the page has been saved at least once — arms auto-persist
-  // below. Absent means the draft is still local-state-only (nothing to
-  // persist to yet), so a regeneration only ever updates the client's copy.
-  cmsDocumentId?: string;
   pageTitle: string;
   metaDescription: string;
   targetKeyword: string | null;
@@ -27,10 +22,16 @@ export interface RegenerateBlockInput {
   targetBlockId: string;
 }
 
-// One success/failure signal, not two — the client never has to reconcile a
-// "regenerated but not saved" partial state. A failure at any step (AI call,
-// type mismatch, or the persisting updatePage call) returns `{ error }` and
-// leaves the caller's own copy of the block untouched.
+// Generates a suggestion only — never persists anything. This used to also
+// auto-save through CmsAdapter.updatePage the moment a cmsDocumentId existed
+// (i.e. the moment the page had already been saved once), which meant a
+// regeneration on an already-saved page silently overwrote live content
+// before anyone had reviewed the result — exactly the "silently replacing
+// content" this task (SPEC.md §17) exists to fix. Persistence now only ever
+// happens through saveDraftPageAction, the same single place every other
+// content write already goes through, and only once a user explicitly
+// accepts the diff GeneratePageForm now shows instead of applying this
+// directly.
 export type RegenerateBlockResult = { block: PageDraftBlock } | { error: string };
 
 // Only heading/paragraph/cta are ever AI-generated content in a page draft
@@ -123,27 +124,6 @@ export async function regenerateBlockAction(
       error:
         `The regenerated block came back as a "${regenerated.type}" instead of ` +
         `"${target.type}" — discarded, original kept.`,
-    };
-  }
-
-  if (!input.cmsDocumentId) {
-    return { block: regenerated };
-  }
-
-  try {
-    const adapter = await getAdapterForCurrentUser();
-    const merged = input.contentBlocks.map((block, i) =>
-      i === index
-        ? draftBlockToContentBlock(regenerated, target.id, target.order)
-        : block,
-    );
-    await adapter.updatePage(input.cmsDocumentId, { contentBlocks: merged });
-  } catch (err) {
-    return {
-      error:
-        err instanceof Error
-          ? err.message
-          : "Regenerated the block but failed to save it.",
     };
   }
 

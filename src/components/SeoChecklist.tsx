@@ -1,5 +1,7 @@
 import type { SeoAnalysis, SeoCheckCategory, SeoCheckResult, SeoCheckStatus } from "@/lib/seo";
 import type { SeoSuggestions } from "@/lib/ai";
+import { computeValueDiff } from "@/lib/diff";
+import { DiffView } from "./DiffView";
 
 function PassIcon({ className }: { className?: string }) {
   return (
@@ -105,18 +107,30 @@ function groupMatchesSuggestion(group: Group, suggestionCategory: string): boole
 
 interface SeoChecklistProps {
   analysis: SeoAnalysis;
+  title: string;
+  metaDescription: string;
   suggestions: SeoSuggestions | null;
+  // Suggestion ids (check.id) the user has already explicitly reviewed this
+  // round — the diff for a rejected suggestion is dismissed for good (until
+  // the next "Get AI suggestions" call resets it), rather than reappearing
+  // on every render just because the underlying values still differ.
+  dismissedSuggestionIds: ReadonlySet<string>;
   onCheckClick: (check: SeoCheckResult) => void;
   onApplyTitle: (value: string) => void;
   onApplyMetaDescription: (value: string) => void;
+  onDismissSuggestion: (id: string) => void;
 }
 
 export function SeoChecklist({
   analysis,
+  title,
+  metaDescription,
   suggestions,
+  dismissedSuggestionIds,
   onCheckClick,
   onApplyTitle,
   onApplyMetaDescription,
+  onDismissSuggestion,
 }: SeoChecklistProps) {
   const matchedSuggestionIndexes = new Set<number>();
 
@@ -152,12 +166,19 @@ export function SeoChecklist({
               {checks.map((check) => {
                 const { icon: Icon, className } = STATUS_STYLES[check.status];
                 const clickable = check.status !== "not-applicable" || check.id === "keywordDensity";
+                const currentValue =
+                  check.id === "titleLength" ? title : check.id === "metaDescriptionLength" ? metaDescription : null;
                 const suggestedValue =
                   check.id === "titleLength"
                     ? suggestions?.suggestedMetaTitle
                     : check.id === "metaDescriptionLength"
                       ? suggestions?.suggestedMetaDescription
                       : null;
+                const showDiff =
+                  currentValue !== null &&
+                  suggestedValue !== null &&
+                  suggestedValue !== undefined &&
+                  !dismissedSuggestionIds.has(check.id);
 
                 return (
                   <li key={check.id}>
@@ -176,24 +197,18 @@ export function SeoChecklist({
                       </div>
                     </button>
 
-                    {suggestedValue && (
-                      <div className="mt-1 ml-8 flex items-start gap-2 rounded-lg border border-violet-200 bg-violet-50 p-2 text-violet-800 dark:border-violet-900/50 dark:bg-violet-950/40 dark:text-violet-300">
-                        <AiIcon className="mt-0.5 h-4 w-4 shrink-0" />
-                        <div className="flex-1">
-                          <p className="text-xs font-medium">AI suggests a change</p>
-                          <p className="mt-0.5">{suggestedValue}</p>
-                        </div>
-                        <button
-                          type="button"
-                          onClick={() =>
+                    {showDiff && (
+                      <div className="mt-1 ml-8">
+                        <DiffView
+                          entries={[computeValueDiff(check.id, currentValue, suggestedValue)]}
+                          renderValue={(value) => value}
+                          onAccept={() =>
                             check.id === "titleLength"
                               ? onApplyTitle(suggestedValue)
                               : onApplyMetaDescription(suggestedValue)
                           }
-                          className="shrink-0 rounded-full bg-violet-600 px-3 py-1 text-xs font-medium text-white hover:bg-violet-700"
-                        >
-                          Apply
-                        </button>
+                          onReject={() => onDismissSuggestion(check.id)}
+                        />
                       </div>
                     )}
                   </li>

@@ -50,6 +50,7 @@ export const page = defineType({
         list: [
           {title: 'Draft', value: 'draft'},
           {title: 'In review', value: 'in-review'},
+          {title: 'Approved', value: 'approved'},
           {title: 'Published', value: 'published'},
         ],
         layout: 'radio',

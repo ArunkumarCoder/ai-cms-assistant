@@ -681,3 +681,104 @@ Unit (Vitest): `src/lib/diff/computeDiff.test.ts` — unchanged/changed/added/re
 **Not verified live:** no browser automation in this environment, same standing constraint as every earlier UI day. What *was* verified: `next build` compiles cleanly with no type errors, and `tsc --noEmit` catches nothing across the whole retrofit (including every call site that previously passed `cmsDocumentId`/`edited` fields that no longer exist).
 
 Tomorrow builds the full review workflow (draft → in review → approved → published) on top of this diff view.
+
+## 18. Review Workflow: Status Machine and Audit Trail (Day 22)
+
+Real content states on top of yesterday's diff view, and a record of what actually happened to a page over time.
+
+### Extending, not replacing, Day 12's draft/unpublished state
+
+`Page.status` (`src/types/page.ts`) already existed as `"draft" | "in-review" | "published"` (Day 12, SPEC.md §9) — today adds `"approved"` between the two, making it `"draft" | "in-review" | "approved" | "published"`. Every place that enumerated the old three values got the fourth added alongside them, nothing rebuilt: the Sanity schema's status field options (`studio/schemaTypes/page.ts`), `SanityAdapter`'s own validation list (`PAGE_STATUSES`), and the `/pages` list's status-badge colors (a new blue for "approved," between amber "in-review" and emerald "published").
+
+### The transition table (task item 5: enforced sensibly)
+
+`src/lib/pages/pageStatusTransitions.ts` is the single source of truth, expressed as a plain lookup table rather than scattered if/else checks:
+
+```
+draft --submit--> in-review --approve--> approved --publish--> published
+                      ^                     |
+                      \--------reject-------/
+```
+
+Publishing can only be reached by passing through `in-review` and `approved` in that exact order — there is no direct `draft → published` or `in-review → published` edge. That's the deliberate choice task item 5 asked to either enforce or document: skipping review would defeat the entire point of having one. `reject` is one general "send it back to draft" action available from both `in-review` and `approved` (not two separately-named actions for the same intent), and there is no back-edge out of `published` at all — nothing in this task asked for an unpublish/revoke flow, and building one speculatively would be designing for a requirement that doesn't exist yet.
+
+`resolvePageStatusTransition(action, current)` is called from both sides: server-side in `transitionPageStatusAction.ts` (where it's actually enforced — an illegal request returns an error before the adapter is ever touched) and client-side in `PageStatusPanel.tsx` (to decide which buttons even render, so the UI never offers something the server would reject). One honest limitation, recorded rather than silently accepted: the action trusts the client's own `currentStatus` to decide legality, since `CmsAdapter` has no "read a page by id" method to re-fetch it authoritatively server-side without a larger interface change. This app has no per-document locking anywhere already (every save already just overwrites — SPEC.md §5's no-caching stance accepts the same class of race elsewhere), so the worst case is a transition computed from a stale belief about the current status, not data corruption — Sanity still only ever receives one well-formed `nextStatus`.
+
+### The audit trail (task items 3 and 4)
+
+`PageAuditLogEntry` (Prisma) — one more append-only table in the same family as `QualityScoreHistory` (Day 15) and `AiCallLog` (Phase 2): `pageId`/`siteId` as unenforced strings rather than `@relation`s, since Sanity, not Postgres, owns Page content. `userEmail` is denormalized onto the row at write time instead of joined from `userId` at read time — the History panel always wants a human-readable "by whom," and there's no reason to pay a join per read for it. `logPageActivity`/`getPageActivity` (`src/lib/audit/`) are both resilient — a Postgres hiccup writing an audit entry doesn't fail the save that already succeeded (matching `logAiCall`'s/`recordHistory`'s established "never throws" convention), and a hiccup reading history degrades to an empty list rather than breaking the whole page detail route over a supplementary panel.
+
+`logPageActivity` is deliberately never exposed as a client-callable Server Action of its own — every entry is written from inside `saveDraftPageAction`, `saveFaqItemsAction`, or `transitionPageStatusAction`, right after that action's own real persistence succeeds, so an entry can only ever describe something that actually happened server-side, never a claim a client made about itself.
+
+### Reusing yesterday's diff module for a third purpose
+
+Task item 3 asks for "what changed," not just "something changed." `src/lib/pages/auditSummary.ts`'s `summarizeContentChange`/`summarizeFaqChange` compute that generically by running the *exact same* `computeArrayDiff`/`computeValueDiff` (Day 21, SPEC.md §17) that render `DiffView` — reused here for text output instead of a UI, not a parallel diffing implementation. Both return `null` when nothing actually differs, and both call sites skip logging entirely in that case: a "Save" click that persists no real change isn't a meaningful event worth an audit row.
+
+This also needed a "before" to diff against, which `saveDraftPageAction` doesn't otherwise have (it doesn't re-fetch the page's prior state before writing). Rather than adding a new adapter read, both `SeoPanel` and `FaqEditor` already hold the last known persisted state in their own `page` prop — the Server Component's fresh fetch from this exact page load — so they pass it through as `previousContent`/`previousFaqItems`. `GeneratePageForm`'s own save never passes either (there's rarely a real "previous persisted state" worth diffing against for a session that's still assembling its first save), so it falls back to a generic "Page created as a draft." / "Page content updated." — simpler, and accurate for what that flow actually is.
+
+### Distinguishing "AI edit accepted" without tracking intent through every click
+
+Task item 3 names "AI edit accepted" as its own category, distinct from a plain manual edit. Rather than threading a tracked flag through every Accept click (real complexity for arguably little accuracy gain — see Day 21's own reasoning for keeping `DiffView` stateless), both call sites *derive* it from the final data at save time:
+
+- `FaqEditor`: an AI-generated FAQ only ever reaches a save via "Generate FAQs," reviewed (and possibly edited) first (Day 19). A saved item's `source` still reading `"ai-generated"` *is* the signal that a suggestion was accepted — no separate flag needed.
+- `SeoPanel`: at save time, if the current `title`/`metaDescription` still equals the last fetched suggestion's, an AI suggestion is part of what's being saved. Also derived, not tracked.
+
+Both feed into the same optional `viaAiSuggestion`/detected-`ai-generated` path, appending "(includes an applied AI suggestion)" / "(includes AI-generated FAQs)" to the audit summary when true.
+
+### UI
+
+`PageStatusPanel.tsx` — the current status as a colored badge plus exactly the buttons `availablePageStatusActions(page.status)` says are legal right now, never a disabled-but-visible button for an illegal one. `PageHistoryPanel.tsx` — a plain server-rendered list (no `"use client"`; nothing in it is interactive), newest-first, each row showing the summary, who, and when. Both render on `/pages/[slug]`, alongside `SeoPanel`/`FaqEditor` — the header's own old raw `{page.status}` text was removed once `PageStatusPanel` existed, rather than showing the same value twice in two different (and differently-formatted) places.
+
+### Testing
+
+Unit (Vitest): `pageStatusTransitions.test.ts` (the full forward path, both reject sources, every illegal transition explicitly including "nothing is legal from published," and `availablePageStatusActions` per status). `auditSummary.test.ts` (no-change returns `null`, field-level and block-level change/add/remove summaries together, FAQ add/edit/remove together). `transitionPageStatusAction.test.ts` (a legal transition applies and logs; an illegal one is rejected before the adapter is ever called; reject-from-approved; an adapter failure; and no crash when there's no active site to attribute the log to). `saveDraftPageAction.test.ts`/`saveFaqItemsAction.test.ts` extended with audit-logging cases (page-created vs. content-updated, the AI-generated-FAQ note, and "no log when nothing changed").
+
+**Verified against the real hosted Postgres, not just mocked:** wrote and read back real `PageAuditLogEntry` rows (including newest-first ordering and JSON `metadata` round-tripping) against the actual database this migration was applied to, then deleted them — the same live-verification standard Day 15's `QualityScoreHistory` set.
+
+**Not verified live:** no browser automation in this environment, same standing constraint as every earlier UI day — the actual status buttons and History panel weren't clicked through in a real browser. What *was* verified: `next build` compiles cleanly with no type errors.
+
+Tomorrow builds the site-wide health dashboard, aggregating quality scores and flagged content across every page — using exactly what today's audit trail and this week's diff/review work already track.
+
+## 19. Site Health Dashboard (Day 23)
+
+Turns everything the app has already computed and stored — persisted quality scores (Day 14), score history (Day 15), review status (Day 22), alt-text status (Day 16/17) — into one aggregate view, plus a queue telling a user exactly which pages to act on next. `/dashboard`, promoted to a real Sidebar entry.
+
+### Read-heavy by construction, not by discipline (task item 4)
+
+Every number on this screen comes from a read that already existed for another feature: `adapter.getPages()`'s own `qualityScore`/`faqCount` fields (Day 14/19), `adapter.listImages()` run through `assessAltText` — the *exact* function Media Library already calls, not a re-implementation (Day 16/17) — and a new `getLatestScoresForSite` (`src/lib/quality/scoreHistory.ts`) that reads Day 15's `QualityScoreHistory` table for sub-score averages. There is no AI call anywhere in this route, and no per-page recomputation of a score that's already sitting on the document — the composite quality score itself is read as a plain field, never recalculated. `getLatestScoresForSite` reduces "latest row per page" in JS after one `findMany`, rather than a raw `DISTINCT ON` query — perfectly fast at this project's real scale (a handful of demo pages per Site), and it's resilient like every other Postgres read helper in this app (`getPageActivity`, Day 22): a hiccup degrades that one card, not the whole page.
+
+### Aggregation and the attention queue as pure, tested functions
+
+`src/lib/dashboard/health.ts` — `summarizeSiteHealth` (page/image counts, status breakdown, average quality score, FAQ coverage) and `averageSubScores` both guard every division explicitly: an empty Site produces `null`/zero-filled results, never `NaN` or a crash (task item 5). `attentionReasonsFor(page)` is the single place "does this page need attention, and why" is decided — a page can be unscored, below the good-score threshold, stuck in `in-review`/`approved`, or carrying flagged images, and any combination of these produces a combined reasons list for that one page (never a separate row per reason). The threshold for "low score" (80) isn't a new number invented for this screen — it's the same green/amber/red boundary `QualityScorePanel.tsx` and `SeoChecklist.tsx` already use everywhere else a quality score gets a color.
+
+`attentionReasonsFor` is exported and called from both sides: server-side (`buildAttentionQueue`, for the initial default view) and client-side (`HealthQueue.tsx`, so toggling to "All pages" can still show *why* a flagged page is flagged, with no re-fetch).
+
+### The queue: filter/sort, same pattern as Media Library
+
+`HealthQueue.tsx` mirrors Media Library's already-established All/Flagged segmented filter + sort-select pattern (Day 16) rather than inventing a new interaction model for a very similar problem: a "Needs attention" / "All pages" filter, and a sort select (lowest score first / most flagged images / review state). An unscored page sorts as if it scored below every real number under "lowest score first" — not knowing is itself worth surfacing ahead of a merely-mediocre score.
+
+### Linking to the right screen, not just the generic editor (task item 3)
+
+Each reason badge is its own link, resolved by `hrefForReason`:
+
+- `unscored` / `low-score` → `/pages/{slug}#seo-panel`
+- `in-review` / `approved` → `/pages/{slug}#status-panel`
+- `flagged-images` → `/media?page={slug}`
+
+The first two needed anchor ids added to `/pages/[slug]/page.tsx` (`id="seo-panel"` / `id="status-panel"`, with `scroll-mt-6` so the jumped-to panel isn't flush against the viewport edge) — cheap, and it meant the page's old duplicate raw-`{page.status}` header text could finally come out (`PageStatusPanel` already showed it, correctly formatted; showing the same value twice, differently, was never a deliberate choice, just left over from before that panel existed).
+
+The third needed a real capability Media Library didn't have yet: page-scoped filtering. `/media` now reads an optional `?page={slug}` search param (Next 16's `searchParams` prop, a promise like `params` — confirmed against `node_modules/next/dist/docs`'s current `page.js` reference before writing it) and filters server-side to that page's images before anything reaches the client, with a small "Showing images used on {title} · Clear filter" banner so the filtered view never looks like the whole library just happens to be one image. Filtering server-side (not just passing an initial client-side filter prop) keeps this consistent with how every other read in this app already works: the server decides what data reaches the client, not the other way around.
+
+### Handling a small or empty Site (task item 5)
+
+Zero pages: a single dashed-border empty state, no stat cards attempting to average nothing. Zero images: the flagged-image stat correctly reads "0 / 0," not a crash. A page nobody has ever saved through this app (`qualityScore: null`, no `QualityScoreHistory` rows): counted honestly as "not yet scored" rather than silently excluded or shown as a misleading 0 — this is precisely why `averageQualityScore`/`averageSubScores` both return `null` (rendered as "—") instead of `NaN` or `0` when nothing's scored yet, and why the sub-score averages section doesn't render at all when no page has ever been scored.
+
+### Testing
+
+Unit (Vitest): `src/lib/dashboard/health.test.ts` (zero-page/zero-image graceful handling, average-excludes-unscored-pages, status counting, FAQ coverage, every individual attention reason plus a page with several at once, and that a fully healthy page produces none). `src/lib/quality/scoreHistory.test.ts` (latest-row-per-page reduction from an unordered-by-page result set, an empty Site, and resilience to a failed query).
+
+**Validated against real demo data:** pulled the three actual seeded pages plus their real image/FAQ/score data directly from the live (public, read-only) Sanity API and ran them through `summarizeSiteHealth`/`buildAttentionQueue` to inspect the real output — this is what surfaced a genuine small bug before it shipped: the flagged-images reason read "1 image **need** alt text" (pluralizing the noun but not agreeing the verb with a singular count). Fixed and re-verified against the same real data.
+
+**Not verified live:** no browser automation in this environment, same standing constraint as every earlier UI day — the actual filter/sort clicks and anchor-scroll behavior weren't exercised in a real browser. What *was* verified: `next build` compiles cleanly, and `/dashboard` registers as a dynamic route identical in build output to every other adapter-backed page in this app.
+
+Tomorrow adds the cost/usage tracking dashboard on top of this, surfacing the token/cost logging (`AiCallLog`) that's been running since Day 9.

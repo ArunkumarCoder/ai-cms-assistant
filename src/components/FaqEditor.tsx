@@ -108,6 +108,7 @@ export function FaqEditor({ page }: { page: Page }) {
         order,
         source: item.source,
       })),
+      previousFaqItems: page.faqItems,
     });
     setSavePending(false);
 

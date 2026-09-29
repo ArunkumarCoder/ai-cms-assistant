@@ -82,7 +82,7 @@ export interface SanityQueryClient {
 const NO_STORE = { cache: "no-store" as const };
 
 const PAGE_TYPES: PageType[] = ["landing", "blog", "service", "other"];
-const PAGE_STATUSES: PageStatus[] = ["draft", "in-review", "published"];
+const PAGE_STATUSES: PageStatus[] = ["draft", "in-review", "approved", "published"];
 const ALT_TEXT_STATUSES: AltTextStatus[] = ["missing", "ai-generated", "reviewed"];
 const SLUG_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 

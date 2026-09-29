@@ -1,7 +1,9 @@
 "use server";
 
 import { requireUser } from "@/lib/auth/dal";
-import { getAdapterForCurrentUser } from "@/lib/cms";
+import { getActiveSiteForCurrentUser, getAdapterForCurrentUser } from "@/lib/cms";
+import { logPageActivity } from "@/lib/audit";
+import { summarizeContentChange, type ContentSnapshot } from "./auditSummary";
 import type { ContentBlock, Page, PageType } from "@/types";
 import { slugify } from "./slugify";
 
@@ -29,6 +31,21 @@ export interface SaveDraftPageInput {
   targetKeyword: string | null;
   pageType: PageType;
   contentBlocks: ContentBlock[];
+  // The last known persisted state, if the caller has one — SeoPanel always
+  // does (the `page` prop it loaded with); GeneratePageForm's own first save
+  // never does, since there's nothing persisted yet to diff against. Powers
+  // the audit log's "what changed" summary (SPEC.md §18) via the same
+  // diffing this app already uses to render DiffView (§17) — omitting it
+  // just means a generic summary, never a validation error.
+  previousContent?: ContentSnapshot;
+  // Whether an AI suggestion (an applied SEO suggestion, a regenerated
+  // block accepted into this draft) is part of what's being saved — the
+  // caller derives this from its own state (e.g. SeoPanel compares the
+  // final title/metaDescription against the last AI suggestions it
+  // fetched) rather than this action trying to infer intent from the
+  // content alone. Purely descriptive: never changes what gets saved, only
+  // how the audit entry describes it (SPEC.md §18).
+  viaAiSuggestion?: boolean;
 }
 
 export type SaveDraftPageResult = { page: Page } | { error: string };
@@ -36,7 +53,8 @@ export type SaveDraftPageResult = { page: Page } | { error: string };
 export async function saveDraftPageAction(
   input: SaveDraftPageInput,
 ): Promise<SaveDraftPageResult> {
-  await requireUser();
+  const user = await requireUser();
+  const site = await getActiveSiteForCurrentUser();
 
   // Re-sanitize as a safety net over whatever the user typed into the
   // (now-editable) slug field — assertValidSlug in sanityAdapter.ts throws on
@@ -64,6 +82,40 @@ export async function saveDraftPageAction(
           pageType: input.pageType,
           contentBlocks: input.contentBlocks,
         });
+
+    if (site) {
+      const pageId = page.cmsDocumentId ?? page.id;
+      if (!input.cmsDocumentId) {
+        await logPageActivity({
+          pageId,
+          siteId: site.id,
+          userId: user.id,
+          userEmail: user.email ?? undefined,
+          action: "page-created",
+          summary: "Page created as a draft.",
+        });
+      } else {
+        const summary = input.previousContent
+          ? summarizeContentChange(input.previousContent, {
+              title: input.title,
+              metaDescription: input.metaDescription,
+              targetKeyword,
+              contentBlocks: input.contentBlocks,
+            })
+          : "Page content updated.";
+        if (summary) {
+          await logPageActivity({
+            pageId,
+            siteId: site.id,
+            userId: user.id,
+            userEmail: user.email ?? undefined,
+            action: "content-updated",
+            summary: input.viaAiSuggestion ? `${summary} (includes an applied AI suggestion)` : summary,
+          });
+        }
+      }
+    }
+
     return { page };
   } catch (err) {
     return {

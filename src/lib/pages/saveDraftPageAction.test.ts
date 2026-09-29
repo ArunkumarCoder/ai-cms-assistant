@@ -6,8 +6,15 @@ vi.mock("@/lib/auth/dal", () => ({ requireUser: () => requireUserMock() }));
 const createPageMock = vi.fn();
 const updatePageMock = vi.fn();
 const getAdapterForCurrentUserMock = vi.fn();
+const getActiveSiteForCurrentUserMock = vi.fn();
 vi.mock("@/lib/cms", () => ({
   getAdapterForCurrentUser: () => getAdapterForCurrentUserMock(),
+  getActiveSiteForCurrentUser: () => getActiveSiteForCurrentUserMock(),
+}));
+
+const logPageActivityMock = vi.fn();
+vi.mock("@/lib/audit", () => ({
+  logPageActivity: (...args: unknown[]) => logPageActivityMock(...args),
 }));
 
 const { saveDraftPageAction } = await import("./saveDraftPageAction");
@@ -17,13 +24,15 @@ const CONTENT_BLOCKS = [
 ];
 
 beforeEach(() => {
-  requireUserMock.mockReset().mockResolvedValue({ id: "user-1" });
+  requireUserMock.mockReset().mockResolvedValue({ id: "user-1", email: "owner@example.com" });
   createPageMock.mockReset();
   updatePageMock.mockReset();
   getAdapterForCurrentUserMock.mockReset().mockResolvedValue({
     createPage: createPageMock,
     updatePage: updatePageMock,
   });
+  getActiveSiteForCurrentUserMock.mockReset().mockResolvedValue({ id: "site-1" });
+  logPageActivityMock.mockReset().mockResolvedValue(undefined);
 });
 
 describe("saveDraftPageAction", () => {
@@ -52,6 +61,28 @@ describe("saveDraftPageAction", () => {
     expect("page" in result && result.page.slug).toBe("my-page");
   });
 
+  it("logs a page-created audit entry on first save", async () => {
+    createPageMock.mockResolvedValue({ id: "page-1", cmsDocumentId: "page-1", slug: "my-page" });
+
+    await saveDraftPageAction({
+      title: "My Page",
+      slug: "my-page",
+      metaDescription: "desc",
+      targetKeyword: null,
+      pageType: "landing",
+      contentBlocks: CONTENT_BLOCKS,
+    });
+
+    expect(logPageActivityMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        pageId: "page-1",
+        siteId: "site-1",
+        userId: "user-1",
+        action: "page-created",
+      }),
+    );
+  });
+
   it("updates an existing page when a cmsDocumentId is present", async () => {
     updatePageMock.mockResolvedValue({ id: "page-1", cmsDocumentId: "page-1", slug: "my-page" });
 
@@ -71,6 +102,50 @@ describe("saveDraftPageAction", () => {
       "page-1",
       expect.objectContaining({ targetKeyword: "keyword" }),
     );
+  });
+
+  it("logs a content-updated audit entry with a diff-based summary when previousContent is given", async () => {
+    updatePageMock.mockResolvedValue({ id: "page-1", cmsDocumentId: "page-1", slug: "my-page" });
+
+    await saveDraftPageAction({
+      cmsDocumentId: "page-1",
+      title: "New Title",
+      slug: "my-page",
+      metaDescription: "desc",
+      targetKeyword: "keyword",
+      pageType: "landing",
+      contentBlocks: CONTENT_BLOCKS,
+      previousContent: {
+        title: "Old Title",
+        metaDescription: "desc",
+        targetKeyword: "keyword",
+        contentBlocks: CONTENT_BLOCKS,
+      },
+    });
+
+    expect(logPageActivityMock).toHaveBeenCalledWith(
+      expect.objectContaining({ action: "content-updated", summary: "title changed" }),
+    );
+  });
+
+  it("does not log an audit entry when previousContent is given and nothing actually changed", async () => {
+    updatePageMock.mockResolvedValue({ id: "page-1", cmsDocumentId: "page-1", slug: "my-page" });
+    const snapshot = {
+      title: "Same Title",
+      metaDescription: "desc",
+      targetKeyword: "keyword",
+      contentBlocks: CONTENT_BLOCKS,
+    };
+
+    await saveDraftPageAction({
+      cmsDocumentId: "page-1",
+      slug: "my-page",
+      pageType: "landing",
+      ...snapshot,
+      previousContent: snapshot,
+    });
+
+    expect(logPageActivityMock).not.toHaveBeenCalled();
   });
 
   it("returns an error instead of throwing when the adapter rejects the write", async () => {

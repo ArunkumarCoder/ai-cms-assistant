@@ -101,3 +101,29 @@ model QualityScoreHistory {
   @@index([siteId])
   @@index([createdAt])
 }
+
+// Append-only audit trail per page (SPEC.md §18) — "what changed, by whom,
+// when" for every meaningful change this app makes: an AI edit actually
+// persisted, a status transition, or a plain content/FAQ save. Deliberately
+// a flat timestamped log, not a generic event-sourcing system (task's own
+// "keep the shape simple") — same pattern as QualityScoreHistory/AiCallLog,
+// `pageId`/`siteId` unenforced strings rather than `@relation`s for the same
+// reason those two already use: Sanity, not Postgres, owns Page content.
+// `userEmail` is denormalized at write time instead of joined from `userId`
+// at read time — the History panel always wants a human-readable "by whom,"
+// and there's no reason to pay a join per history read for it.
+model PageAuditLogEntry {
+  id        String   @id @default(cuid())
+  pageId    String
+  siteId    String
+  userId    String?
+  userEmail String?
+  action    String
+  summary   String
+  metadata  Json?
+  createdAt DateTime @default(now())
+
+  @@index([pageId])
+  @@index([siteId])
+  @@index([createdAt])
+}

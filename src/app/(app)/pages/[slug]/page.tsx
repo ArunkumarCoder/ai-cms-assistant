@@ -3,8 +3,11 @@ import { notFound, redirect } from "next/navigation";
 import { ContentBlocks } from "@/components/ContentBlocks";
 import { FaqEditor } from "@/components/FaqEditor";
 import { SeoPanel } from "@/components/SeoPanel";
+import { PageStatusPanel } from "@/components/PageStatusPanel";
+import { PageHistoryPanel } from "@/components/PageHistoryPanel";
 import { getAdapterForCurrentUser, NoSiteConnectedError } from "@/lib/cms";
 import { buildFaqPageJsonLd, serializeJsonLd } from "@/lib/faq";
+import { getPageActivity } from "@/lib/audit";
 import type { Page } from "@/types";
 
 async function getPage(
@@ -62,6 +65,7 @@ export default async function PageDetailRoute({
   // automatically back in sync the moment FaqEditor's "Save FAQs" triggers
   // router.refresh() — no separate invalidation to wire up.
   const faqPageJsonLd = buildFaqPageJsonLd(page.faqItems);
+  const activity = await getPageActivity(page.cmsDocumentId ?? page.id);
 
   return (
     <article className="mx-auto w-full max-w-2xl px-6 py-16">
@@ -80,8 +84,11 @@ export default async function PageDetailRoute({
         <h1 className="text-3xl font-semibold tracking-tight">{page.title}</h1>
         <div className="mt-3 flex flex-wrap items-center gap-3 text-sm text-zinc-500 dark:text-zinc-400">
           <span className="capitalize">{page.pageType}</span>
-          <span>·</span>
-          <span className="capitalize">{page.status}</span>
+          {/* Status itself now lives in PageStatusPanel below, with a
+              properly-formatted label ("In review", not CSS `capitalize`'s
+              "In-review") and the actual transition controls next to it —
+              showing the same value twice, differently formatted, would be
+              worse than just showing it once, in the place you can act on it. */}
           {typeof page.qualityScore === "number" && (
             <>
               <span>·</span>
@@ -91,7 +98,14 @@ export default async function PageDetailRoute({
         </div>
       </header>
 
-      <div className="mt-6">
+      {/* Anchor ids the Dashboard's Health Queue (SPEC.md §19) links directly
+          to — a low-score or unreviewed page opens straight to the relevant
+          panel instead of just the generic page editor. */}
+      <div id="status-panel" className="mt-6 scroll-mt-6">
+        <PageStatusPanel page={page} />
+      </div>
+
+      <div id="seo-panel" className="mt-6 scroll-mt-6">
         <SeoPanel page={page} />
       </div>
 
@@ -106,6 +120,13 @@ export default async function PageDetailRoute({
       </div>
 
       <FaqEditor page={page} />
+
+      <section className="mt-12">
+        <h2 className="text-xl font-semibold">History</h2>
+        <div className="mt-4">
+          <PageHistoryPanel entries={activity} />
+        </div>
+      </section>
     </article>
   );
 }

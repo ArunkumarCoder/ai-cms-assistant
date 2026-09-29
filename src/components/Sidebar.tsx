@@ -7,12 +7,13 @@ const NAV_ITEMS = [
   { href: "/sites", label: "Sites" },
   { href: "/pages", label: "Pages" },
   { href: "/media", label: "Media" },
+  { href: "/dashboard", label: "Dashboard" },
 ];
 
-// Later phases (FAQ generation, the cost/quality dashboard) each get their
-// own screen — listed now, disabled, so the shell's shape doesn't have to
-// change again when they land.
-const SOON_ITEMS = ["FAQs", "Dashboard"];
+// The cost/usage dashboard (tomorrow) extends this same screen rather than
+// needing its own nav entry — listed now, disabled, so the shell's shape
+// doesn't have to change again when it lands.
+const SOON_ITEMS = ["FAQs"];
 
 export function Sidebar() {
   const pathname = usePathname();

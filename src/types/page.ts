@@ -2,7 +2,10 @@ import type { ContentBlock } from "./content-block";
 import type { FaqItem } from "./faq-item";
 
 export type PageType = "landing" | "blog" | "service" | "other";
-export type PageStatus = "draft" | "in-review" | "published";
+// draft -> in-review -> approved -> published, with "reject" (from either
+// in-review or approved) sending a page back to draft. See SPEC.md §18 for
+// the full transition table and why publishing can't skip review.
+export type PageStatus = "draft" | "in-review" | "approved" | "published";
 
 export interface Page {
   id: string;

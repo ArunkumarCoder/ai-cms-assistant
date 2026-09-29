@@ -154,6 +154,14 @@ export function SeoPanel({ page }: SeoPanelProps) {
   async function handleSave() {
     setSaveError(null);
     setSavePending(true);
+    // Derived, not tracked through every keystroke/click: if the currently
+    // fetched suggestions still match what's about to be saved, an AI
+    // suggestion is part of this save — same "read it back from the final
+    // data, don't track intent separately" approach FaqEditor's own
+    // AI-generated-FAQ detection already uses (SPEC.md §18).
+    const viaAiSuggestion =
+      suggestions !== null &&
+      (title === suggestions.suggestedMetaTitle || metaDescription === suggestions.suggestedMetaDescription);
     const result = await saveDraftPageAction({
       cmsDocumentId: page.cmsDocumentId ?? page.id,
       title,
@@ -162,6 +170,13 @@ export function SeoPanel({ page }: SeoPanelProps) {
       targetKeyword: targetKeyword || null,
       pageType: page.pageType,
       contentBlocks: page.contentBlocks,
+      previousContent: {
+        title: page.title,
+        metaDescription: page.metaDescription,
+        targetKeyword: page.targetKeyword,
+        contentBlocks: page.contentBlocks,
+      },
+      viaAiSuggestion,
     });
     setSavePending(false);
 

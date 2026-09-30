@@ -1,7 +1,13 @@
 "use server";
 
 import { requireUser } from "@/lib/auth/dal";
-import { aiClient, pageDraftJsonSchema, pageDraftSchema, type PageDraft } from "@/lib/ai";
+import {
+  aiClient,
+  describeAiActionFailure,
+  pageDraftJsonSchema,
+  pageDraftSchema,
+  type PageDraft,
+} from "@/lib/ai";
 import { getActiveSiteForCurrentUser } from "@/lib/cms";
 import { buildPageGenerationPrompt, type PageBrief } from "./prompt";
 import { slugify } from "./slugify";
@@ -25,7 +31,7 @@ export async function generatePageDraftAction(
       "page-generation",
       prompt,
       pageDraftJsonSchema,
-      { context: { userId: user.id } },
+      { context: { userId: user.id, siteId: site?.id } },
     );
     // Re-validate the provider's own JSON output against the same schema
     // used to constrain it — generateStructured's `T` type param is a
@@ -33,9 +39,6 @@ export async function generatePageDraftAction(
     const draft = pageDraftSchema.parse(result.data);
     return { draft: { ...draft, slug: slugify(draft.slug || draft.title) } };
   } catch (err) {
-    return {
-      error:
-        err instanceof Error ? err.message : "Failed to generate a page draft.",
-    };
+    return { error: describeAiActionFailure(err, "Failed to generate a page draft.") };
   }
 }

@@ -1,7 +1,13 @@
 "use server";
 
 import { requireUser } from "@/lib/auth/dal";
-import { aiClient, faqListJsonSchema, faqListSchema, type FaqItemDraft } from "@/lib/ai";
+import {
+  aiClient,
+  describeAiActionFailure,
+  faqListJsonSchema,
+  faqListSchema,
+  type FaqItemDraft,
+} from "@/lib/ai";
 import { getActiveSiteForCurrentUser } from "@/lib/cms";
 import { extractParagraphText, extractWords } from "@/lib/seo";
 import type { ContentBlock, PageType } from "@/types";
@@ -56,8 +62,6 @@ export async function generateFaqListAction(
     // used to constrain it, same safety net as every other AI action.
     return { faqItems: faqListSchema.parse(result.data).faqItems };
   } catch (err) {
-    return {
-      error: err instanceof Error ? err.message : "Failed to generate FAQs.",
-    };
+    return { error: describeAiActionFailure(err, "Failed to generate FAQs.") };
   }
 }

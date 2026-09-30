@@ -86,6 +86,21 @@ describe("generatePageDraftAction", () => {
     expect(prompt).toContain("Warm and plain-spoken.");
   });
 
+  it("attributes the AI call's cost log to the active site (SPEC.md §20 — this was missing before today)", async () => {
+    getActiveSiteForCurrentUserMock.mockResolvedValue({ id: "site-1", brandVoice: null });
+    generateStructuredMock.mockResolvedValue({
+      data: VALID_DRAFT,
+      usage: { inputTokens: 10, outputTokens: 20 },
+      provider: "groq",
+      model: "llama-3.3-70b-versatile",
+    });
+
+    await generatePageDraftAction(BRIEF);
+
+    const [, , , options] = generateStructuredMock.mock.calls[0];
+    expect(options).toEqual({ context: { userId: "user-1", siteId: "site-1" } });
+  });
+
   it("omits the brand voice line when no site is connected", async () => {
     getActiveSiteForCurrentUserMock.mockResolvedValue(null);
     generateStructuredMock.mockResolvedValue({

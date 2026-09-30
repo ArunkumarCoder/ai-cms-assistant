@@ -2,6 +2,8 @@ import { redirect } from "next/navigation";
 import { getActiveSiteForCurrentUser, getAdapterForCurrentUser, NoSiteConnectedError } from "@/lib/cms";
 import { assessAltText } from "@/lib/images";
 import { getLatestScoresForSite } from "@/lib/quality";
+import { getCallLogForSite } from "@/lib/ai";
+import { summarizeCostUsage, type CostUsageSummary } from "@/lib/costUsage";
 import {
   averageSubScores,
   summarizeSiteHealth,
@@ -10,11 +12,18 @@ import {
   type SubScoreAverages,
 } from "@/lib/dashboard";
 import { HealthQueue } from "@/components/HealthQueue";
+import { CostUsagePanel } from "@/components/CostUsagePanel";
 
 export const metadata = { title: "Dashboard" };
 
 type DashboardResult =
-  | { kind: "ok"; summary: SiteHealthSummary; subScoreAverages: SubScoreAverages | null; pages: PageHealthInput[] }
+  | {
+      kind: "ok";
+      summary: SiteHealthSummary;
+      subScoreAverages: SubScoreAverages | null;
+      pages: PageHealthInput[];
+      costUsage: CostUsageSummary;
+    }
   | { kind: "error"; message: string };
 
 // Everything here is a read of data this app already computes and stores —
@@ -56,11 +65,28 @@ async function getDashboardData(): Promise<DashboardResult> {
       })),
     );
 
+    // src/lib/ai/logging.ts's AiCallLog, running since Day 9 — a second,
+    // independent read alongside the page/image data above, not something
+    // that gates on there being any pages at all (a Site can have AI call
+    // history from pages that were since deleted, or simply no pages yet).
+    const callLog = site ? await getCallLogForSite(site.id) : [];
+    const costUsage = summarizeCostUsage(
+      callLog.map((row) => ({
+        provider: row.provider,
+        callType: row.callType,
+        estimatedCostUsd: row.estimatedCostUsd,
+        success: row.success,
+        createdAt: row.createdAt,
+        fallbackFrom: row.fallbackFrom,
+      })),
+    );
+
     return {
       kind: "ok",
       summary: summarizeSiteHealth(healthPages, images.length, flaggedImages),
       subScoreAverages,
       pages: healthPages,
+      costUsage,
     };
   } catch (err) {
     if (err instanceof NoSiteConnectedError) {
@@ -186,6 +212,19 @@ export default async function DashboardPage() {
             </div>
           </section>
         </>
+      )}
+
+      {result.kind === "ok" && (
+        <section className="mt-10">
+          <h2 className="text-xl font-semibold">Cost &amp; usage</h2>
+          <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
+            Every AI call this Site has made, logged since Day 9 — not gated on there being any
+            pages right now.
+          </p>
+          <div className="mt-4">
+            <CostUsagePanel summary={result.costUsage} />
+          </div>
+        </section>
       )}
     </div>
   );

@@ -1,7 +1,13 @@
 "use server";
 
 import { requireUser } from "@/lib/auth/dal";
-import { aiClient, altTextJsonSchema, altTextSchema, type AltText } from "@/lib/ai";
+import {
+  aiClient,
+  altTextJsonSchema,
+  altTextSchema,
+  describeAiActionFailure,
+  type AltText,
+} from "@/lib/ai";
 import { getActiveSiteForCurrentUser } from "@/lib/cms";
 import { buildAltTextPrompt } from "./prompt";
 
@@ -42,8 +48,6 @@ export async function generateAltTextAction(
     // generateSeoSuggestionsAction.ts.
     return { altText: altTextSchema.parse(result.data) };
   } catch (err) {
-    return {
-      error: err instanceof Error ? err.message : "Failed to generate alt text.",
-    };
+    return { error: describeAiActionFailure(err, "Failed to generate alt text.") };
   }
 }

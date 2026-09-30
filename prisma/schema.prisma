@@ -70,6 +70,15 @@ model AiCallLog {
   errorMessage     String?
   siteId           String?
   userId           String?
+  // Set only on a row logged for a *fallback* attempt (src/lib/ai/client.ts,
+  // SPEC.md §21) — the name of the provider that was actually configured for
+  // this call type and failed first, triggering the fallback. Never set on
+  // the primary attempt's own (separate) failure row — that row already
+  // records its own `provider`/`success: false`; this field exists so a
+  // fallback is always visible in the log as a real, distinguishable event
+  // ("log that a fallback occurred, don't silently swap providers"), not
+  // just a second row that looks identical to an unrelated ordinary call.
+  fallbackFrom     String?
   createdAt        DateTime @default(now())
 
   @@index([callType])

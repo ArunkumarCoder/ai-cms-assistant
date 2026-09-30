@@ -20,4 +20,6 @@ export { aiClient } from "./client";
 export { resolveProviderName } from "./routing";
 export { getProvider } from "./providers/registry";
 export { estimateCostUsd } from "./pricing";
+export { getCallLogForSite } from "./logging";
+export { describeAiActionFailure } from "./errorMessage";
 export * from "./schemas";

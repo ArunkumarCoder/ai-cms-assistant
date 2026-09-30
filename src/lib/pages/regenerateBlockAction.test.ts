@@ -93,4 +93,14 @@ describe("regenerateBlockAction", () => {
     const [, prompt] = generateStructuredMock.mock.calls[0];
     expect(prompt).toContain("Warm and plain-spoken.");
   });
+
+  it("attributes the AI call's cost log to the active site (SPEC.md §20 — this was missing before today)", async () => {
+    getActiveSiteForCurrentUserMock.mockResolvedValue({ id: "site-1", brandVoice: null });
+    mockRegenerated({ type: "paragraph", content: "New paragraph" });
+
+    await regenerateBlockAction(baseInput());
+
+    const [, , , options] = generateStructuredMock.mock.calls[0];
+    expect(options).toEqual({ context: { userId: "user-1", siteId: "site-1" } });
+  });
 });

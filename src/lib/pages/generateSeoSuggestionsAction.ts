@@ -3,6 +3,7 @@
 import { requireUser } from "@/lib/auth/dal";
 import {
   aiClient,
+  describeAiActionFailure,
   seoSuggestionsJsonSchema,
   seoSuggestionsSchema,
   type SeoSuggestions,
@@ -25,14 +26,12 @@ export async function generateSeoSuggestionsAction(
       "seo-scoring",
       prompt,
       seoSuggestionsJsonSchema,
-      { context: { userId: user.id } },
+      { context: { userId: user.id, siteId: site?.id } },
     );
     // Re-validate the provider's own JSON output against the same schema
     // used to constrain it, same safety net as generatePageDraftAction.ts.
     return { suggestions: seoSuggestionsSchema.parse(result.data) };
   } catch (err) {
-    return {
-      error: err instanceof Error ? err.message : "Failed to generate SEO suggestions.",
-    };
+    return { error: describeAiActionFailure(err, "Failed to generate SEO suggestions.") };
   }
 }

@@ -6,6 +6,7 @@ import {
   aiClient,
   blockRegenerationJsonSchema,
   blockRegenerationSchema,
+  describeAiActionFailure,
 } from "@/lib/ai";
 import type { PageDraftBlock } from "@/lib/ai/schemas/pageDraft";
 import type { ContentBlock, PageType } from "@/types";
@@ -107,13 +108,11 @@ export async function regenerateBlockAction(
       "block-regeneration",
       prompt,
       blockRegenerationJsonSchema,
-      { context: { userId: user.id } },
+      { context: { userId: user.id, siteId: site?.id } },
     );
     regenerated = blockRegenerationSchema.parse(result.data).block;
   } catch (err) {
-    return {
-      error: err instanceof Error ? err.message : "Failed to regenerate this block.",
-    };
+    return { error: describeAiActionFailure(err, "Failed to regenerate this block.") };
   }
 
   // Schema validation alone can't catch this — see blockRegeneration.ts's

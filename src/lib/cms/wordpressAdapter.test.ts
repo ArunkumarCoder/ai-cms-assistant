@@ -19,6 +19,7 @@ const site: Site = {
 function makeClient(overrides: Partial<WordPressApiClient> = {}): WordPressApiClient {
   return {
     get: vi.fn().mockRejectedValue(new Error("get not mocked")),
+    post: vi.fn().mockRejectedValue(new Error("post not mocked")),
     ...overrides,
   };
 }
@@ -184,6 +185,31 @@ describe("WordPressAdapter.getPage", () => {
     ]);
   });
 
+  it("reads openInNewTab back from a button's linkTarget attribute, not hardcoded false", async () => {
+    // Regression test for a bug the write-path's live round-trip check
+    // found: this used to always report `false` regardless of the actual
+    // markup, silently losing a CTA's "open in new tab" setting on every
+    // read. See the fix's comment in wpBlockToContentBlock (SPEC.md §24).
+    const row = {
+      ...richPageRow,
+      content: {
+        raw:
+          '<!-- wp:buttons -->\n<div class="wp-block-buttons"><!-- wp:button {"linkTarget":"_blank","rel":"noreferrer noopener"} -->\n' +
+          '<div class="wp-block-button"><a class="wp-block-button__link" href="/go" target="_blank" rel="noreferrer noopener">Go</a></div>\n' +
+          "<!-- /wp:button --></div>\n<!-- /wp:buttons -->",
+        rendered: "",
+      },
+    };
+    const get = vi.fn().mockResolvedValue([row]);
+    const adapter = new WordPressAdapter(site, makeClient({ get }));
+
+    const page = await adapter.getPage("ai-powered-content-assistant");
+
+    expect(page?.contentBlocks).toEqual([
+      { id: "wp-block-0", type: "cta", order: 0, content: "Go", metadata: { href: "/go", openInNewTab: true } },
+    ]);
+  });
+
   it("reads custom meta into pageType/targetKeyword/qualityScore/metaDescription", async () => {
     const get = vi.fn().mockResolvedValue([richPageRow]);
     const adapter = new WordPressAdapter(site, makeClient({ get }));
@@ -269,19 +295,202 @@ describe("WordPressAdapter.listImages", () => {
   });
 });
 
-describe("WordPressAdapter write methods (not yet implemented)", () => {
-  it("createPage/updatePage/updateImage all throw — write support lands separately", async () => {
-    const adapter = new WordPressAdapter(site, makeClient());
+describe("WordPressAdapter.createPage", () => {
+  const validInput = {
+    slug: "new-page",
+    title: "New page",
+    metaDescription: "A new page.",
+    pageType: "blog" as const,
+    contentBlocks: [
+      { id: "b1", type: "paragraph" as const, order: 0, content: "Hello world." },
+    ],
+  };
+
+  it("sends a translated Gutenberg payload to WordPress, always with an explicit slug, and returns the re-fetched page", async () => {
+    const post = vi.fn().mockResolvedValue({ id: 99 });
+    const get = vi.fn().mockResolvedValue({ ...richPageRow, id: 99 });
+    const adapter = new WordPressAdapter(site, makeClient({ post, get }));
+
+    const page = await adapter.createPage(validInput);
+
+    expect(post).toHaveBeenCalledTimes(1);
+    const [path, body] = post.mock.calls[0];
+    expect(path).toBe("/ai-cms-pages");
+    expect(body.slug).toBe("new-page");
+    expect(body.status).toBe("draft");
+    expect(body.content).toContain("<!-- wp:paragraph -->");
+    expect(body.content).toContain("Hello world.");
+    expect(body.meta).toMatchObject({
+      _ai_cms_page_type: "blog",
+      _ai_cms_seo_meta_description: "A new page.",
+    });
+    expect(page.id).toBe("99");
+  });
+
+  it("maps the domain status to WordPress's own status slug", async () => {
+    const post = vi.fn().mockResolvedValue({ id: 1 });
+    const get = vi.fn().mockResolvedValue(richPageRow);
+    const adapter = new WordPressAdapter(site, makeClient({ post, get }));
+
+    await adapter.createPage({ ...validInput, status: "in-review" });
+
+    expect(post.mock.calls[0][1].status).toBe("in_review");
+  });
+
+  it("serializes a cta block's openInNewTab into linkTarget/rel attrs AND the anchor's target", async () => {
+    const post = vi.fn().mockResolvedValue({ id: 1 });
+    const get = vi.fn().mockResolvedValue(richPageRow);
+    const adapter = new WordPressAdapter(site, makeClient({ post, get }));
+
+    await adapter.createPage({
+      ...validInput,
+      contentBlocks: [
+        { id: "c1", type: "cta", order: 0, content: "Go", metadata: { href: "/go", openInNewTab: true } },
+      ],
+    });
+
+    const content = post.mock.calls[0][1].content as string;
+    expect(content).toContain('"linkTarget":"_blank"');
+    expect(content).toContain('target="_blank"');
+  });
+
+  it("rejects invalid input before ever calling WordPress", async () => {
+    const post = vi.fn();
+    const adapter = new WordPressAdapter(site, makeClient({ post }));
+
+    await expect(adapter.createPage({ ...validInput, title: "" })).rejects.toThrow(/title/i);
+    expect(post).not.toHaveBeenCalled();
+  });
+
+  it("propagates a write rejected by WordPress instead of swallowing it", async () => {
+    const post = vi.fn().mockRejectedValue(new Error("403 rest_cannot_create"));
+    const adapter = new WordPressAdapter(site, makeClient({ post }));
+
+    await expect(adapter.createPage(validInput)).rejects.toThrow("403 rest_cannot_create");
+  });
+
+  it("throws when a cta block has no metadata.href, before calling WordPress", async () => {
+    const post = vi.fn();
+    const adapter = new WordPressAdapter(site, makeClient({ post }));
 
     await expect(
       adapter.createPage({
-        slug: "x",
-        title: "X",
-        metaDescription: "",
-        pageType: "other",
+        ...validInput,
+        contentBlocks: [{ id: "c1", type: "cta", order: 0, content: "Go" }],
       }),
-    ).rejects.toThrow(/not implemented/i);
-    await expect(adapter.updatePage("1", {})).rejects.toThrow(/not implemented/i);
-    await expect(adapter.updateImage("1", {})).rejects.toThrow(/not implemented/i);
+    ).rejects.toThrow(/href/i);
+    expect(post).not.toHaveBeenCalled();
+  });
+});
+
+describe("WordPressAdapter.updatePage", () => {
+  it("only sends the fields that changed, leaving content/meta alone when only qualityScore changes", async () => {
+    // Mirrors withQualityScoring's own real call shape (autoScore.ts): every
+    // create/update is immediately followed by `updatePage(id, {
+    // qualityScore })` alone — if this ever sent `content`, it would blank
+    // out a page's body on every single save.
+    const post = vi.fn().mockResolvedValue({});
+    const get = vi.fn().mockResolvedValue(richPageRow);
+    const adapter = new WordPressAdapter(site, makeClient({ post, get }));
+
+    await adapter.updatePage("10", { qualityScore: 91 });
+
+    const [path, body] = post.mock.calls[0];
+    expect(path).toBe("/ai-cms-pages/10");
+    expect(body).toEqual({ meta: { _ai_cms_quality_score: "91" } });
+  });
+
+  it("serializes a full contentBlocks replacement back into Gutenberg markup", async () => {
+    const post = vi.fn().mockResolvedValue({});
+    const get = vi.fn().mockResolvedValue(richPageRow);
+    const adapter = new WordPressAdapter(site, makeClient({ post, get }));
+
+    await adapter.updatePage("10", {
+      contentBlocks: [{ id: "h1", type: "heading", order: 0, content: "New heading", metadata: { level: 3 } }],
+    });
+
+    const body = post.mock.calls[0][1];
+    expect(body.content).toBe(
+      '<!-- wp:heading {"level":3} -->\n<h3 class="wp-block-heading">New heading</h3>\n<!-- /wp:heading -->',
+    );
+  });
+
+  it("maps a null quality score to an empty string, not the literal word 'null'", async () => {
+    const post = vi.fn().mockResolvedValue({});
+    const get = vi.fn().mockResolvedValue(richPageRow);
+    const adapter = new WordPressAdapter(site, makeClient({ post, get }));
+
+    await adapter.updatePage("10", { qualityScore: null });
+
+    expect(post.mock.calls[0][1]).toEqual({ meta: { _ai_cms_quality_score: "" } });
+  });
+
+  it("rejects an invalid status transition value before calling WordPress", async () => {
+    const post = vi.fn();
+    const adapter = new WordPressAdapter(site, makeClient({ post }));
+
+    await expect(
+      adapter.updatePage("10", { status: "archived" as never }),
+    ).rejects.toThrow(/status/i);
+    expect(post).not.toHaveBeenCalled();
+  });
+});
+
+describe("WordPressAdapter.updateImage", () => {
+  it("writes alt_text and the custom alt-text-status meta field, then re-fetches", async () => {
+    const post = vi.fn().mockResolvedValue({});
+    const get = vi.fn().mockResolvedValue({
+      id: 7,
+      source_url: "http://localhost:8890/a.png",
+      alt_text: "A dashboard screenshot",
+      post: 0,
+      date_gmt: "2026-01-01T00:00:00",
+      modified_gmt: "2026-01-01T00:00:00",
+      meta: { _ai_cms_alt_text_status: "ai-generated" },
+    });
+    const adapter = new WordPressAdapter(site, makeClient({ post, get }));
+
+    const image = await adapter.updateImage("7", {
+      altText: "A dashboard screenshot",
+      altTextStatus: "ai-generated",
+    });
+
+    expect(post).toHaveBeenCalledWith("/media/7", {
+      alt_text: "A dashboard screenshot",
+      meta: { _ai_cms_alt_text_status: "ai-generated" },
+    });
+    expect(image.altTextStatus).toBe("ai-generated");
+  });
+
+  it("distinguishes ai-generated from reviewed — the real gap presence-based derivation couldn't represent", async () => {
+    // Accepting the AI's suggestion unedited (saveAltTextAction.ts) sets
+    // "ai-generated"; reading that image back must not silently upgrade it
+    // to "reviewed" just because alt_text is now non-empty.
+    const get = vi.fn().mockResolvedValue([
+      {
+        id: 7,
+        source_url: "http://x/a.png",
+        alt_text: "AI wrote this",
+        post: 0,
+        date_gmt: "2026-01-01T00:00:00",
+        modified_gmt: "2026-01-01T00:00:00",
+        meta: { _ai_cms_alt_text_status: "ai-generated" },
+      },
+    ]);
+    const adapter = new WordPressAdapter(site, makeClient({ get }));
+
+    const images = await adapter.listImages();
+
+    expect(images[0].altTextStatus).toBe("ai-generated");
+  });
+
+  it("rejects an invalid altTextStatus value before calling WordPress", async () => {
+    const post = vi.fn();
+    const adapter = new WordPressAdapter(site, makeClient({ post }));
+
+    await expect(
+      adapter.updateImage("7", { altTextStatus: "bogus" as never }),
+    ).rejects.toThrow(/altTextStatus/i);
+    expect(post).not.toHaveBeenCalled();
   });
 });

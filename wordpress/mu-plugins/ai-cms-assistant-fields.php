@@ -122,4 +122,26 @@ add_action('init', function () {
         'show_in_rest' => true,
         ...$auth_edit,
     ]);
+
+    // Alt-text review status (missing | ai-generated | reviewed, SPEC.md §2)
+    // — Day 27's read-only pass derived this purely from whether the native
+    // `alt_text` field was empty, since no write path existed yet to need
+    // anything more. Day 28 (write support) makes that derivation provably
+    // insufficient: saveAltTextAction.ts actively writes "ai-generated" vs.
+    // "reviewed" as two *different* outcomes of the same non-empty alt_text,
+    // a distinction attachment-presence-alone can never represent. This is a
+    // real custom meta field on the `attachment` post type, not a bridging
+    // guess — registered here, same mechanism as every `ai_cms_page` meta
+    // field above, scoped to the attachment itself (not per-usage/per-block)
+    // because this app's own `listImages()`/`updateImage()` already address
+    // images by WordPress media ID, not by page+block — see SPEC.md §24 for
+    // why per-usage tracking (Day 26's original per-block JSON-map idea) was
+    // dropped in favor of this simpler, consistent-with-the-read-path
+    // approach.
+    register_post_meta('attachment', '_ai_cms_alt_text_status', [
+        'type' => 'string',
+        'single' => true,
+        'show_in_rest' => true,
+        'auth_callback' => fn () => current_user_can('upload_files'),
+    ]);
 });

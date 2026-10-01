@@ -1,6 +1,6 @@
 import { prisma } from "@/lib/db";
 import type { CmsAdapter } from "@/lib/cms/adapter";
-import type { CreatePageInput, UpdatePageInput } from "@/lib/cms/types";
+import type { CreatePageInput, ImageListFilter, UpdateImageInput, UpdatePageInput } from "@/lib/cms/types";
 import type { Page } from "@/types";
 import { computeQualityScore } from "./score";
 
@@ -62,8 +62,25 @@ export function withQualityScoring(adapter: CmsAdapter, context: AutoScoreContex
     return scored;
   }
 
+  // Every method is forwarded explicitly, not via `{...adapter, ...}` —
+  // found during Day 29's full-feature integration walkthrough as a real,
+  // pre-existing bug affecting every real adapter (Sanity included), not
+  // just WordPress: `SanityAdapter`/`WordPressAdapter` are ES classes, so
+  // their methods live on the prototype, not as the instance's own
+  // enumerable properties. Object spread only copies own-enumerable
+  // properties, so `{...adapter}` silently produced an object with *only*
+  // `site`/`client` plus whichever two methods this wrapper redefined —
+  // every call to the wrapped adapter's `getPages`/`getPage`/`listImages`/
+  // `updateImage` would throw "is not a function" the moment a real class
+  // instance (not a plain mock object) was wrapped. autoScore.test.ts never
+  // caught this because its own `makeInnerAdapter` test double is a plain
+  // object literal, whose properties *are* own-enumerable — a mock shape
+  // that happened to make the bug invisible to its own test suite.
   return {
-    ...adapter,
+    getPages: () => adapter.getPages(),
+    getPage: (slug: string) => adapter.getPage(slug),
+    listImages: (filter?: ImageListFilter) => adapter.listImages(filter),
+    updateImage: (cmsAssetId: string, data: UpdateImageInput) => adapter.updateImage(cmsAssetId, data),
     async createPage(data: CreatePageInput): Promise<Page> {
       const created = await adapter.createPage(data);
       return scoreAndPersist(created);

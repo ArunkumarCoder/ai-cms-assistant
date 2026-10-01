@@ -183,7 +183,7 @@ export class WordPressAdapter implements CmsAdapter {
       context: "edit",
     });
     const row = rows[0];
-    return row ? toPage(row, this.site) : null;
+    return row ? this.toPageResolved(row) : null;
   }
 
   async createPage(data: CreatePageInput): Promise<Page> {
@@ -272,7 +272,48 @@ export class WordPressAdapter implements CmsAdapter {
 
   private async fetchPageByIdOrThrow(id: string | number): Promise<Page> {
     const row = await this.client.get<WpPage>(`/${PAGE_ENDPOINT}/${id}`, { context: "edit" });
-    return toPage(row, this.site);
+    return this.toPageResolved(row);
+  }
+
+  // Resolves each image block's *real* per-attachment alt-text status
+  // (same field `updateImage`/`listImages` read) instead of letting the
+  // block parser's own presence-based guess stand unchallenged — found
+  // during Day 29's integration walkthrough: an image accepted via
+  // saveAltTextAction as "ai-generated" would otherwise read back as
+  // "reviewed" the moment `getPage()` parsed its block (non-empty alt text
+  // being the *only* signal the old per-block derivation had), silently
+  // disagreeing with what Media Library and computeQualityScore's alt-text
+  // sub-score should actually see. One batched `/media?include=...` request
+  // per page read, not one per image — bounded by how many images are
+  // actually on this one page.
+  private async toPageResolved(row: WpPage): Promise<Page> {
+    const blocks = parseGutenbergBlocks(row.content.raw ?? row.content.rendered);
+    const altStatusByAssetId = await this.resolveImageAltStatuses(blocks);
+    return toPage(row, this.site, blocks, altStatusByAssetId);
+  }
+
+  private async resolveImageAltStatuses(blocks: WpBlock[]): Promise<Map<string, AltTextStatus>> {
+    const assetIds = [
+      ...new Set(
+        blocks
+          .filter((block) => block.blockName === "image" && typeof block.attrs.id === "number")
+          .map((block) => String(block.attrs.id)),
+      ),
+    ];
+    if (assetIds.length === 0) return new Map();
+
+    try {
+      const rows = await this.client.get<WpMedia[]>("/media", {
+        include: assetIds.join(","),
+        per_page: String(assetIds.length),
+      });
+      return new Map(rows.map((mediaRow) => [String(mediaRow.id), toAltTextStatus(mediaRow)]));
+    } catch {
+      // A failed lookup degrades to the old presence-based guess for this
+      // page's images rather than failing the whole page read over a
+      // secondary, non-essential lookup.
+      return new Map();
+    }
   }
 }
 
@@ -326,9 +367,13 @@ function toGmtIso(gmtDate: string | undefined): string {
   return gmtDate.endsWith("Z") ? gmtDate : `${gmtDate}Z`;
 }
 
-function toPage(row: WpPage, site: Site): Page {
+function toPage(
+  row: WpPage,
+  site: Site,
+  blocks: WpBlock[],
+  altStatusByAssetId: Map<string, AltTextStatus>,
+): Page {
   const meta = row.meta ?? {};
-  const blocks = parseGutenbergBlocks(row.content.raw ?? row.content.rendered);
 
   return {
     id: String(row.id),
@@ -341,7 +386,7 @@ function toPage(row: WpPage, site: Site): Page {
     pageType: toPageType(meta._ai_cms_page_type),
     status: toDomainStatus(row.status),
     contentBlocks: blocks
-      .map((block, order) => wpBlockToContentBlock(block, order))
+      .map((block, order) => wpBlockToContentBlock(block, order, altStatusByAssetId))
       .filter((block): block is ContentBlock => block !== null),
     latestSeoAuditId: undefined,
     faqItems: toFaqItems(meta._ai_cms_faq_items, String(row.id)),
@@ -474,7 +519,11 @@ function decodeHtmlEntities(text: string): string {
     .replace(/&#0?39;/g, "'");
 }
 
-function wpBlockToContentBlock(block: WpBlock, order: number): ContentBlock | null {
+function wpBlockToContentBlock(
+  block: WpBlock,
+  order: number,
+  altStatusByAssetId: Map<string, AltTextStatus>,
+): ContentBlock | null {
   const id = `wp-block-${order}`;
 
   switch (block.blockName) {
@@ -536,6 +585,11 @@ function wpBlockToContentBlock(block: WpBlock, order: number): ContentBlock | nu
       const altMatch = block.innerHTML.match(/\salt="([^"]*)"/i);
       const alt = altMatch ? decodeHtmlEntities(altMatch[1]) : "";
       const assetId = typeof block.attrs.id === "number" ? String(block.attrs.id) : undefined;
+      // Prefer the real per-attachment status (resolveImageAltStatuses,
+      // same field listImages()/updateImage() read) over the old
+      // presence-only guess — see this adapter's file-header gap #3 update
+      // and the toPageResolved() comment for why the guess alone was wrong.
+      const resolvedStatus = assetId ? altStatusByAssetId.get(assetId) : undefined;
       return {
         id,
         type: "image",
@@ -544,7 +598,7 @@ function wpBlockToContentBlock(block: WpBlock, order: number): ContentBlock | nu
         metadata: {
           url: srcMatch[1],
           assetId,
-          altTextStatus: (alt ? "reviewed" : "missing") as AltTextStatus,
+          altTextStatus: resolvedStatus ?? ((alt ? "reviewed" : "missing") as AltTextStatus),
         },
       };
     }
@@ -677,18 +731,23 @@ function isAltTextStatus(value: unknown): value is AltTextStatus {
   return typeof value === "string" && (ALT_TEXT_STATUSES as string[]).includes(value);
 }
 
+// Prefer the real custom field (set by updateImage, see file header gap #3)
+// when present; fall back to deriving from alt_text presence alone for
+// attachments this app never wrote a status to — pre-existing media, or alt
+// text set directly in wp-admin. Shared by toImageAsset (listImages'/
+// updateImage's own per-asset status) and resolveImageAltStatuses (the
+// per-page-block lookup below) so both read paths agree on one status for
+// the same attachment, instead of two independently-derived answers.
+function toAltTextStatus(row: Pick<WpMedia, "alt_text" | "meta">): AltTextStatus {
+  const altText = row.alt_text && row.alt_text.length > 0 ? row.alt_text : null;
+  const storedStatus = row.meta?._ai_cms_alt_text_status;
+  if (isAltTextStatus(storedStatus)) return storedStatus;
+  return altText ? "reviewed" : "missing";
+}
+
 function toImageAsset(row: WpMedia, site: Site): ImageAsset {
   const altText = row.alt_text && row.alt_text.length > 0 ? row.alt_text : null;
-  // Prefer the real custom field (set by updateImage, see file header gap
-  // #3) when present; fall back to deriving from alt_text presence alone for
-  // attachments this app never wrote a status to — pre-existing media, or
-  // alt text set directly in wp-admin.
-  const storedStatus = row.meta?._ai_cms_alt_text_status;
-  const altTextStatus: AltTextStatus = isAltTextStatus(storedStatus)
-    ? storedStatus
-    : altText
-      ? "reviewed"
-      : "missing";
+  const altTextStatus = toAltTextStatus(row);
 
   return {
     id: String(row.id),

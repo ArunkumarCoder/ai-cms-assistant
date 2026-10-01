@@ -185,6 +185,41 @@ describe("WordPressAdapter.getPage", () => {
     ]);
   });
 
+  it("resolves an image block's real per-attachment alt-text status, overriding the presence-only guess", async () => {
+    // Regression test: before this fix, a page's image block always derived
+    // altTextStatus from whether its inline `alt` attribute was non-empty —
+    // "reviewed" here, even though the real attachment (same one
+    // listImages()/updateImage() address) was actually stored as
+    // "ai-generated". The two call sites would silently disagree about the
+    // same image's status. See this adapter's file-header gap #3 update.
+    const get = vi.fn().mockImplementation(async (path: string) => {
+      if (path === "/media") {
+        return [{ id: 7, alt_text: "Dashboard screenshot", meta: { _ai_cms_alt_text_status: "ai-generated" } }];
+      }
+      return [richPageRow];
+    });
+    const adapter = new WordPressAdapter(site, makeClient({ get }));
+
+    const page = await adapter.getPage("ai-powered-content-assistant");
+
+    const imageBlock = page?.contentBlocks.find((b) => b.type === "image");
+    expect(imageBlock?.metadata?.altTextStatus).toBe("ai-generated");
+    expect(get).toHaveBeenCalledWith("/media", expect.objectContaining({ include: "7" }));
+  });
+
+  it("falls back to the presence-based guess when the attachment lookup fails, instead of failing the whole page read", async () => {
+    const get = vi.fn().mockImplementation(async (path: string) => {
+      if (path === "/media") throw new Error("503 Service Unavailable");
+      return [richPageRow];
+    });
+    const adapter = new WordPressAdapter(site, makeClient({ get }));
+
+    const page = await adapter.getPage("ai-powered-content-assistant");
+
+    const imageBlock = page?.contentBlocks.find((b) => b.type === "image");
+    expect(imageBlock?.metadata?.altTextStatus).toBe("reviewed");
+  });
+
   it("reads openInNewTab back from a button's linkTarget attribute, not hardcoded false", async () => {
     // Regression test for a bug the write-path's live round-trip check
     // found: this used to always report `false` regardless of the actual

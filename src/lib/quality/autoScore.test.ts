@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { CmsAdapter } from "@/lib/cms/adapter";
-import type { Page } from "@/types";
+import type { ImageAsset, Page } from "@/types";
+import type { PageSummary } from "@/lib/cms/types";
 
 const qualityScoreHistoryCreateMock = vi.fn();
 vi.mock("@/lib/db", () => ({
@@ -164,5 +165,48 @@ describe("withQualityScoring", () => {
     expect(getPage).toHaveBeenCalledWith("some-slug");
     expect(listImages).toHaveBeenCalledTimes(1);
     expect(updateImage).not.toHaveBeenCalled();
+  });
+
+  it("forwards getPages/getPage/listImages/updateImage correctly when the wrapped adapter is a real class instance, not a plain mock object", async () => {
+    // Regression test for a real, previously-undetected bug (found during
+    // Day 29's full-feature integration walkthrough against a real
+    // WordPressAdapter instance, but equally present for SanityAdapter):
+    // object spread (`{...adapter}`) only copies an object's OWN enumerable
+    // properties. A real CmsAdapter implementation declares its methods as
+    // ES class methods, which live on the prototype — not as the instance's
+    // own properties — so the old `{...adapter, createPage, updatePage}`
+    // implementation silently dropped getPages/getPage/listImages/
+    // updateImage for any *real* adapter. The "leaves every other method
+    // untouched" test above never caught this because makeInnerAdapter()
+    // returns a plain object literal, whose properties are all
+    // own-enumerable by construction — a mock shape that happened to hide
+    // exactly the failure mode a real adapter hits.
+    class RealishAdapter implements CmsAdapter {
+      async getPages(): Promise<PageSummary[]> {
+        return [{ id: "p1" } as PageSummary];
+      }
+      async getPage(slug: string): Promise<Page | null> {
+        return slug === "found" ? page() : null;
+      }
+      async createPage(): Promise<Page> {
+        throw new Error("not used in this test");
+      }
+      async updatePage(): Promise<Page> {
+        throw new Error("not used in this test");
+      }
+      async listImages(): Promise<ImageAsset[]> {
+        return [{ id: "img-1" } as ImageAsset];
+      }
+      async updateImage(): Promise<ImageAsset> {
+        return { id: "img-1" } as ImageAsset;
+      }
+    }
+    const adapter = withQualityScoring(new RealishAdapter(), { siteId: "site-1" });
+
+    expect(await adapter.getPages()).toEqual([{ id: "p1" }]);
+    expect(await adapter.getPage("found")).not.toBeNull();
+    expect(await adapter.getPage("missing")).toBeNull();
+    expect(await adapter.listImages()).toEqual([{ id: "img-1" }]);
+    expect(await adapter.updateImage("img-1", {})).toEqual({ id: "img-1" });
   });
 });

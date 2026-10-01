@@ -30,13 +30,27 @@ model Site {
   user                  User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   name                  String
   cms                   String   @default("sanity")
-  sanityProjectId       String
-  sanityDataset         String
+  // Sanity-only fields — nullable now that `cms` can be "wordpress" (Day 27).
+  // Previously required (non-nullable); a WordPress-backed Site has neither,
+  // so the constraint had to move from the column to buildSanityAdapter()/
+  // connectSiteAction.ts (checked per-`cms` branch instead).
+  sanityProjectId       String?
+  sanityDataset         String?
   // Ciphertext only — see src/lib/crypto/siteToken.ts for the encrypt/decrypt
   // pair. Nullable because a connected project could in principle be
   // read-only/public with no token (SanityAdapter already supports that),
   // even though today's connect flow always asks for one.
   sanityTokenCiphertext String?
+  // WordPress-only fields (Day 27) — mirrors the Sanity fields above one for
+  // one: a plain non-secret identifier (wordpressUrl, like sanityProjectId),
+  // a plain username (Application Passwords authenticate as a specific WP
+  // user, unlike Sanity's project-scoped token), and an encrypted secret
+  // (wordpressAppPasswordCiphertext, same encryptSiteToken/decryptSiteToken
+  // pair as sanityTokenCiphertext — the function was already generic, not
+  // Sanity-specific, despite its one prior caller).
+  wordpressUrl                    String?
+  wordpressUsername               String?
+  wordpressAppPasswordCiphertext  String?
   // Optional per-site style guide threaded into every AI generation/
   // regeneration prompt for this site (src/lib/pages/prompt.ts) — app-DB
   // only, same treatment as SeoAudit/qualityScore: it's workflow input, not

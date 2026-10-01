@@ -17,6 +17,16 @@ vi.mock("./sanityAdapter", () => ({
   }),
 }));
 
+const wpGetPagesMock = vi.fn();
+vi.mock("./wordpressAdapter", () => ({
+  FetchWordPressApiClient: vi.fn(),
+  WordPressAdapter: vi.fn().mockImplementation(function FakeWordPressAdapter(this: {
+    getPages: typeof wpGetPagesMock;
+  }) {
+    this.getPages = wpGetPagesMock;
+  }),
+}));
+
 const requireUserMock = vi.fn();
 vi.mock("@/lib/auth/dal", () => ({ requireUser: () => requireUserMock() }));
 
@@ -62,6 +72,7 @@ describe("connectSiteAction", () => {
       connectSiteAction(
         undefined,
         formDataFor({
+          cms: "sanity",
           name: "Client Site",
           projectId: "abc123",
           dataset: "production",
@@ -90,6 +101,7 @@ describe("connectSiteAction", () => {
       connectSiteAction(
         undefined,
         formDataFor({
+          cms: "sanity",
           name: "Client Site",
           projectId: "abc123",
           dataset: "production",
@@ -109,6 +121,7 @@ describe("connectSiteAction", () => {
     const result = await connectSiteAction(
       undefined,
       formDataFor({
+        cms: "sanity",
         name: "Client Site",
         projectId: "abc123",
         dataset: "production",
@@ -124,6 +137,7 @@ describe("connectSiteAction", () => {
     const result = await connectSiteAction(
       undefined,
       formDataFor({
+        cms: "sanity",
         name: "Client Site",
         projectId: "not a valid id!",
         dataset: "production",
@@ -133,6 +147,72 @@ describe("connectSiteAction", () => {
 
     expect(result?.error).toMatch(/project ID/);
     expect(getPagesMock).not.toHaveBeenCalled();
+    expect(siteCreateMock).not.toHaveBeenCalled();
+  });
+
+  it("validates via a real WordPress adapter call, then encrypts the application password, persists, and redirects", async () => {
+    wpGetPagesMock.mockResolvedValue([]);
+    siteCreateMock.mockResolvedValue({ id: "site-2" });
+
+    await expect(
+      connectSiteAction(
+        undefined,
+        formDataFor({
+          cms: "wordpress",
+          name: "Client WP Site",
+          url: "http://localhost:8890/",
+          username: "admin",
+          applicationPassword: "EBbQTvwKn3VAS3fLnnJHE07x",
+        }),
+      ),
+    ).rejects.toThrow("REDIRECT:/pages");
+
+    expect(wpGetPagesMock).toHaveBeenCalledTimes(1);
+    expect(siteCreateMock).toHaveBeenCalledTimes(1);
+
+    const { data } = siteCreateMock.mock.calls[0][0];
+    expect(data.cms).toBe("wordpress");
+    // Trailing slash stripped so the stored URL matches what
+    // FetchWordPressApiClient's URL-joining expects.
+    expect(data.wordpressUrl).toBe("http://localhost:8890");
+    expect(data.wordpressUsername).toBe("admin");
+    expect(data.wordpressAppPasswordCiphertext).not.toContain("EBbQTvwKn3VAS3fLnnJHE07x");
+
+    expect(setActiveSiteCookieMock).toHaveBeenCalledWith("site-2");
+  });
+
+  it("does not persist a WordPress Site when the validation call fails", async () => {
+    wpGetPagesMock.mockRejectedValue(new Error("401 Unauthorized"));
+
+    const result = await connectSiteAction(
+      undefined,
+      formDataFor({
+        cms: "wordpress",
+        name: "Client WP Site",
+        url: "http://localhost:8890",
+        username: "admin",
+        applicationPassword: "wrong-password",
+      }),
+    );
+
+    expect(result?.error).toMatch(/Couldn't connect/);
+    expect(siteCreateMock).not.toHaveBeenCalled();
+  });
+
+  it("rejects a malformed WordPress URL before ever calling the site", async () => {
+    const result = await connectSiteAction(
+      undefined,
+      formDataFor({
+        cms: "wordpress",
+        name: "Client WP Site",
+        url: "not-a-url",
+        username: "admin",
+        applicationPassword: "pw",
+      }),
+    );
+
+    expect(result?.error).toMatch(/URL/);
+    expect(wpGetPagesMock).not.toHaveBeenCalled();
     expect(siteCreateMock).not.toHaveBeenCalled();
   });
 });

@@ -9,6 +9,7 @@ import { withQualityScoring } from "@/lib/quality";
 import type { Site } from "@/types";
 import type { CmsAdapter } from "./adapter";
 import { SanityAdapter } from "./sanityAdapter";
+import { FetchWordPressApiClient, WordPressAdapter } from "./wordpressAdapter";
 
 // Day 6 replacement for the old defaultAdapter.ts singleton: one hardcoded
 // Site (from env) becomes "whichever Site the logged-in user connected." Day
@@ -61,10 +62,57 @@ export async function getAdapterForCurrentUser(): Promise<CmsAdapter> {
     throw new NoSiteConnectedError();
   }
 
-  return withQualityScoring(buildSanityAdapter(site), { siteId: site.id });
+  return withQualityScoring(buildAdapterForSite(site), { siteId: site.id });
+}
+
+// withQualityScoring only depends on the generic CmsAdapter interface (Day
+// 15, SPEC.md §11), so it applies uniformly here regardless of which branch
+// below actually constructs the adapter — a WordPress-backed Site gets the
+// exact same automatic scoring-on-save behavior a Sanity one already had.
+function buildAdapterForSite(site: PrismaSite): CmsAdapter {
+  if (site.cms === "wordpress") {
+    return buildWordPressAdapter(site);
+  }
+  return buildSanityAdapter(site);
+}
+
+export function buildWordPressAdapter(site: PrismaSite): WordPressAdapter {
+  if (!site.wordpressUrl || !site.wordpressUsername || !site.wordpressAppPasswordCiphertext) {
+    throw new Error(
+      `Site "${site.id}" is marked cms="wordpress" but is missing wordpressUrl/` +
+        "wordpressUsername/wordpressAppPasswordCiphertext.",
+    );
+  }
+
+  const applicationPassword = decryptSiteToken(site.wordpressAppPasswordCiphertext);
+  const client = new FetchWordPressApiClient(
+    site.wordpressUrl,
+    site.wordpressUsername,
+    applicationPassword,
+  );
+
+  const domainSite: Site = {
+    id: site.id,
+    userId: site.userId,
+    name: site.name,
+    cms: "wordpress",
+    wordpressUrl: site.wordpressUrl,
+    wordpressUsername: site.wordpressUsername,
+    brandVoice: site.brandVoice ?? undefined,
+    createdAt: site.createdAt.toISOString(),
+    updatedAt: site.updatedAt.toISOString(),
+  };
+
+  return new WordPressAdapter(domainSite, client);
 }
 
 export function buildSanityAdapter(site: PrismaSite): SanityAdapter {
+  if (!site.sanityProjectId || !site.sanityDataset) {
+    throw new Error(
+      `Site "${site.id}" is marked cms="sanity" but is missing sanityProjectId/sanityDataset.`,
+    );
+  }
+
   const token = site.sanityTokenCiphertext
     ? decryptSiteToken(site.sanityTokenCiphertext)
     : undefined;

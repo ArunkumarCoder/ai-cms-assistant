@@ -17,7 +17,7 @@ export default async function SitesPage() {
         <div>
           <h1 className="text-3xl font-semibold tracking-tight">Sites</h1>
           <p className="mt-2 text-zinc-600 dark:text-zinc-400">
-            Sanity projects connected to your account.
+            Sanity and WordPress sites connected to your account.
           </p>
         </div>
         <Link
@@ -31,14 +31,14 @@ export default async function SitesPage() {
       {sites.length === 0 && (
         <div className="mt-8 rounded-lg border border-dashed border-zinc-300 p-8 text-center dark:border-zinc-700">
           <p className="text-zinc-600 dark:text-zinc-400">
-            No Sanity project connected yet — connect one to start pulling in
-            real pages.
+            No site connected yet — connect a Sanity project or WordPress site
+            to start pulling in real pages.
           </p>
           <Link
             href="/sites/connect"
             className="mt-4 inline-block rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white dark:bg-white dark:text-zinc-900"
           >
-            Connect a Sanity project
+            Connect a site
           </Link>
         </div>
       )}
@@ -53,7 +53,9 @@ export default async function SitesPage() {
                   <div>
                     <h2 className="text-lg font-medium">{site.name}</h2>
                     <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
-                      {site.sanityProjectId} · {site.sanityDataset}
+                      {site.cms === "wordpress"
+                        ? `WordPress · ${site.wordpressUrl}`
+                        : `${site.sanityProjectId} · ${site.sanityDataset}`}
                     </p>
                   </div>
                   {isActive ? (

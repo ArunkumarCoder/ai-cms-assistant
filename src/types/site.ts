@@ -12,7 +12,13 @@ export interface Site {
   cms: CmsProvider;
   sanityProjectId?: string;
   sanityDataset?: string;
+  // WordPress fields (Day 27) — the Application Password itself is the
+  // secret and, like sanityTokenCiphertext, deliberately isn't a field here;
+  // it's stored encrypted (wordpressAppPasswordCiphertext) and only ever
+  // decrypted inside resolveAdapter.ts. url/username are plain identifiers,
+  // not secrets, same treatment as sanityProjectId/sanityDataset above.
   wordpressUrl?: string;
+  wordpressUsername?: string;
   // Optional style guide threaded into every AI generation/regeneration
   // prompt for this site (src/lib/pages/prompt.ts) — set on the site itself
   // rather than re-entered per brief, so every page generated for this

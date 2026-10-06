@@ -18,14 +18,21 @@ vi.mock("./sanityAdapter", () => ({
 }));
 
 const wpGetPagesMock = vi.fn();
-vi.mock("./wordpressAdapter", () => ({
-  FetchWordPressApiClient: vi.fn(),
-  WordPressAdapter: vi.fn().mockImplementation(function FakeWordPressAdapter(this: {
-    getPages: typeof wpGetPagesMock;
-  }) {
-    this.getPages = wpGetPagesMock;
-  }),
-}));
+vi.mock("./wordpressAdapter", async (importOriginal) => {
+  // WordPressApiError is kept real (not mocked) — diagnoseWordPressFailure
+  // does `instanceof WordPressApiError` checks, which only work against the
+  // actual class, not a mocked stand-in.
+  const actual = await importOriginal<typeof import("./wordpressAdapter")>();
+  return {
+    ...actual,
+    FetchWordPressApiClient: vi.fn(),
+    WordPressAdapter: vi.fn().mockImplementation(function FakeWordPressAdapter(this: {
+      getPages: typeof wpGetPagesMock;
+    }) {
+      this.getPages = wpGetPagesMock;
+    }),
+  };
+});
 
 const requireUserMock = vi.fn();
 vi.mock("@/lib/auth/dal", () => ({ requireUser: () => requireUserMock() }));
@@ -181,22 +188,94 @@ describe("connectSiteAction", () => {
     expect(setActiveSiteCookieMock).toHaveBeenCalledWith("site-2");
   });
 
-  it("does not persist a WordPress Site when the validation call fails", async () => {
-    wpGetPagesMock.mockRejectedValue(new Error("401 Unauthorized"));
+  it("does not persist a WordPress Site when a network-level failure occurs, and surfaces that specific reason", async () => {
+    const { WordPressApiError } = await import("./wordpressAdapter");
+    // No `status` — simulates a network-level failure (DNS, connection
+    // refused), which diagnoseWordPressFailure surfaces directly without
+    // re-probing the connection (no real fetch calls in this test).
+    wpGetPagesMock.mockRejectedValue(new WordPressApiError('Couldn\'t reach "http://nope.invalid" — fetch failed.'));
 
     const result = await connectSiteAction(
       undefined,
       formDataFor({
         cms: "wordpress",
         name: "Client WP Site",
-        url: "http://localhost:8890",
+        url: "http://nope.invalid",
         username: "admin",
         applicationPassword: "wrong-password",
       }),
     );
 
-    expect(result?.error).toMatch(/Couldn't connect/);
+    expect(result?.error).toMatch(/Couldn't reach/);
     expect(siteCreateMock).not.toHaveBeenCalled();
+  });
+
+  it("diagnoses an unreachable REST API (wrong URL or REST API disabled) with a specific message", async () => {
+    wpGetPagesMock.mockRejectedValue(new Error("404 Not Found"));
+    const fetchMock = vi.fn().mockResolvedValue(new Response("Not Found", { status: 404 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await connectSiteAction(
+      undefined,
+      formDataFor({
+        cms: "wordpress",
+        name: "Client WP Site",
+        url: "http://not-wordpress.example",
+        username: "admin",
+        applicationPassword: "pw",
+      }),
+    );
+
+    expect(result?.error).toMatch(/doesn't look like a reachable WordPress REST API/);
+    expect(fetchMock).toHaveBeenCalledWith("http://not-wordpress.example/wp-json/", expect.anything());
+    vi.unstubAllGlobals();
+  });
+
+  it("diagnoses rejected credentials (reachable, but auth fails) with a specific message mentioning HTTPS", async () => {
+    wpGetPagesMock.mockRejectedValue(new Error("401 rest_cannot_edit"));
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(new Response("{}", { status: 200 })) // /wp-json/ reachable
+      .mockResolvedValueOnce(new Response("{}", { status: 401 })); // /users/me rejects credentials
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await connectSiteAction(
+      undefined,
+      formDataFor({
+        cms: "wordpress",
+        name: "Client WP Site",
+        url: "http://localhost:9999",
+        username: "admin",
+        applicationPassword: "wrong-password",
+      }),
+    );
+
+    expect(result?.error).toMatch(/didn't accept that username\/application password/);
+    expect(result?.error).toMatch(/HTTPS/);
+    vi.unstubAllGlobals();
+  });
+
+  it("diagnoses a missing companion plugin (reachable and authenticated, but the endpoint doesn't exist)", async () => {
+    wpGetPagesMock.mockRejectedValue(new Error("404 rest_no_route"));
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(new Response("{}", { status: 200 })) // /wp-json/ reachable
+      .mockResolvedValueOnce(new Response("{}", { status: 200 })); // /users/me authenticates fine
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await connectSiteAction(
+      undefined,
+      formDataFor({
+        cms: "wordpress",
+        name: "Client WP Site",
+        url: "http://localhost:9999",
+        username: "admin",
+        applicationPassword: "correct-password",
+      }),
+    );
+
+    expect(result?.error).toMatch(/doesn't have the required companion plugin installed/);
+    vi.unstubAllGlobals();
   });
 
   it("rejects a malformed WordPress URL before ever calling the site", async () => {

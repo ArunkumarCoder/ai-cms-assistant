@@ -102,6 +102,29 @@ export function ConnectSiteForm() {
         </>
       ) : (
         <>
+          <div className="rounded-lg border border-zinc-200 bg-zinc-50 p-3 text-xs text-zinc-600 dark:border-zinc-800 dark:bg-zinc-900/50 dark:text-zinc-400">
+            <p className="font-medium text-zinc-700 dark:text-zinc-300">Before you connect:</p>
+            <ol className="mt-1.5 list-decimal space-y-1 pl-4">
+              <li>
+                Install the companion plugin — copy{" "}
+                <code className="rounded bg-zinc-200 px-1 py-0.5 dark:bg-zinc-800">
+                  wordpress/mu-plugins/ai-cms-assistant-fields.php
+                </code>{" "}
+                from this repo into your site&apos;s{" "}
+                <code className="rounded bg-zinc-200 px-1 py-0.5 dark:bg-zinc-800">
+                  wp-content/mu-plugins/
+                </code>{" "}
+                folder (no activation needed — see the README).
+              </li>
+              <li>
+                In wp-admin, go to <strong>Users → Profile</strong> and scroll to{" "}
+                <strong>Application Passwords</strong>.
+              </li>
+              <li>Give it a name (e.g. &quot;ai-cms-assistant&quot;) and click Add New Application Password.</li>
+              <li>Paste the generated password below exactly as shown — it&apos;s only displayed once.</li>
+            </ol>
+          </div>
+
           <div>
             <label htmlFor="url" className="block text-sm font-medium">
               Site URL
@@ -113,6 +136,11 @@ export function ConnectSiteForm() {
               placeholder="https://example.com"
               className={inputClass}
             />
+            <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
+              Application Passwords require HTTPS on a live site. A local/staging install over
+              plain HTTP also works if <code>WP_ENVIRONMENT_TYPE</code> is set to{" "}
+              <code>&quot;local&quot;</code> in <code>wp-config.php</code>.
+            </p>
           </div>
 
           <div>
@@ -126,6 +154,9 @@ export function ConnectSiteForm() {
               placeholder="admin"
               className={inputClass}
             />
+            <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
+              The account the application password above was generated for.
+            </p>
           </div>
 
           <div>
@@ -140,8 +171,8 @@ export function ConnectSiteForm() {
               className={inputClass}
             />
             <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
-              From your WordPress profile → Application Passwords — not your login
-              password. Stored encrypted, never shown again after this.
+              Not your login password — the one-time code from step 2 above. Stored encrypted,
+              never shown again after this.
             </p>
           </div>
         </>

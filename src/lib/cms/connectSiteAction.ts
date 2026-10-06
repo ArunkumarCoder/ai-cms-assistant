@@ -9,7 +9,7 @@ import { requireUser } from "@/lib/auth/dal";
 import { prisma } from "@/lib/db";
 import { setActiveSiteCookie } from "@/lib/sites/activeSite";
 import { SanityAdapter } from "./sanityAdapter";
-import { FetchWordPressApiClient, WordPressAdapter } from "./wordpressAdapter";
+import { FetchWordPressApiClient, WordPressAdapter, WordPressApiError } from "./wordpressAdapter";
 
 export type ConnectSiteState = { error?: string } | undefined;
 
@@ -156,11 +156,7 @@ async function connectWordPressSite(
   try {
     await testAdapter.getPages();
   } catch (err) {
-    return {
-      error:
-        "Couldn't connect to that WordPress site — double-check the site URL, username, " +
-        `and application password. (${err instanceof Error ? err.message : "Unknown error"})`,
-    };
+    return { error: await diagnoseWordPressFailure(normalizedUrl, username, applicationPassword, err) };
   }
 
   const created = await prisma.site.create({
@@ -185,4 +181,81 @@ async function connectWordPressSite(
 async function activateAndRedirect(siteId: string): Promise<never> {
   await setActiveSiteCookie(siteId);
   redirect("/pages");
+}
+
+// Turns "the test call to /ai-cms-pages failed" into a specific, actionable
+// reason by re-probing the connection in stages, cheapest/most-likely-cause
+// first — only ever runs on the failure path, so a working connection pays
+// no extra latency for this. Three outcomes a user actually needs to tell
+// apart, each with a different fix:
+//   1. Not a reachable WordPress REST API at all (wrong URL, REST API
+//      disabled by a security plugin, site is down).
+//   2. Reachable, but these credentials don't authenticate (wrong username,
+//      mistyped application password, or — the one real gotcha this
+//      project's own staging setup hit, SPEC.md §22 — Application Passwords
+//      silently disabled because the site isn't served over HTTPS).
+//   3. Reachable and authenticated, but the companion plugin isn't
+//      installed, so the custom `ai-cms-pages` endpoint this adapter needs
+//      doesn't exist yet.
+async function diagnoseWordPressFailure(
+  url: string,
+  username: string,
+  applicationPassword: string,
+  originalError: unknown,
+): Promise<string> {
+  // A network-level failure (DNS, connection refused, TLS) already produces
+  // a specific, actionable WordPressApiError message — no need to re-probe.
+  if (originalError instanceof WordPressApiError && originalError.status === undefined) {
+    return originalError.message;
+  }
+
+  let discovery: Response;
+  try {
+    discovery = await fetch(`${url}/wp-json/`, { cache: "no-store" });
+  } catch (err) {
+    return (
+      `Couldn't reach "${url}" at all — double-check the URL is correct and publicly reachable. ` +
+      `(${err instanceof Error ? err.message : "unknown network error"})`
+    );
+  }
+  if (!discovery.ok) {
+    return (
+      `"${url}" doesn't look like a reachable WordPress REST API (got ${discovery.status} from ` +
+      "/wp-json/) — double-check the URL, or whether a security plugin is blocking the REST API."
+    );
+  }
+
+  const credentials = Buffer.from(`${username}:${applicationPassword}`).toString("base64");
+  let authCheck: Response;
+  try {
+    authCheck = await fetch(`${url}/wp-json/wp/v2/users/me`, {
+      headers: { Authorization: `Basic ${credentials}` },
+      cache: "no-store",
+    });
+  } catch (err) {
+    return (
+      `Reached "${url}", but couldn't verify credentials — try again, or check for a network or ` +
+      `proxy issue. (${err instanceof Error ? err.message : "unknown network error"})`
+    );
+  }
+  if (authCheck.status === 401 || authCheck.status === 403) {
+    return (
+      "WordPress didn't accept that username/application password combination — double-check " +
+      "both. If this site isn't served over HTTPS, also confirm Application Passwords are " +
+      'actually enabled: WordPress disables them over plain HTTP unless WP_ENVIRONMENT_TYPE is ' +
+      'set to "local" in wp-config.php.'
+    );
+  }
+  if (!authCheck.ok) {
+    return (
+      `WordPress rejected the credential check (${authCheck.status}) — double-check the username ` +
+      "and application password."
+    );
+  }
+
+  return (
+    "Connected and authenticated, but this WordPress site doesn't have the required companion " +
+    'plugin installed (the "ai-cms-pages" endpoint doesn\'t exist yet) — see the README\'s ' +
+    '"Connecting WordPress" section for how to install wordpress/mu-plugins/ai-cms-assistant-fields.php.'
+  );
 }

@@ -82,6 +82,19 @@ export interface WordPressApiClient {
   post<T>(path: string, body: Record<string, unknown>): Promise<T>;
 }
 
+// Carries the HTTP status (when one exists) as a real field, not just
+// embedded in the message string — connectSiteAction.ts's connection
+// diagnostics (Day 30) branch on this directly instead of re-parsing text.
+export class WordPressApiError extends Error {
+  constructor(
+    message: string,
+    public readonly status?: number,
+  ) {
+    super(message);
+    this.name = "WordPressApiError";
+  }
+}
+
 export class FetchWordPressApiClient implements WordPressApiClient {
   constructor(
     private readonly baseUrl: string,
@@ -110,21 +123,47 @@ export class FetchWordPressApiClient implements WordPressApiClient {
     const credentials = Buffer.from(`${this.username}:${this.applicationPassword}`).toString(
       "base64",
     );
-    const response = await fetch(url, {
-      ...init,
-      headers: { ...init.headers, Authorization: `Basic ${credentials}` },
-      cache: "no-store",
-    });
 
-    if (!response.ok) {
-      const body = await response.text().catch(() => "");
-      throw new Error(
-        `WordPress REST API request to "${url.pathname}" failed: ${response.status} ` +
-          `${response.statusText}${body ? ` — ${body}` : ""}`,
+    let response: Response;
+    try {
+      response = await fetch(url, {
+        ...init,
+        headers: { ...init.headers, Authorization: `Basic ${credentials}` },
+        cache: "no-store",
+      });
+    } catch (err) {
+      // A network-level failure (DNS, connection refused, TLS error) throws
+      // a plain TypeError from `fetch` with no HTTP status at all — wrapped
+      // here so callers (and connectSiteAction.ts's diagnostics) can tell
+      // "never reached the server" apart from "server responded with an
+      // error," which need different advice to a user connecting a site.
+      throw new WordPressApiError(
+        `Couldn't reach "${url.origin}" — ${err instanceof Error ? err.message : "unknown network error"}.`,
       );
     }
 
-    return response.json() as Promise<T>;
+    if (!response.ok) {
+      const body = await response.text().catch(() => "");
+      throw new WordPressApiError(
+        `WordPress REST API request to "${url.pathname}" failed: ${response.status} ` +
+          `${response.statusText}${body ? ` — ${body}` : ""}`,
+        response.status,
+      );
+    }
+
+    try {
+      return (await response.json()) as T;
+    } catch {
+      // A 200 that isn't JSON (an HTML error page from a proxy, a caching
+      // layer, or a URL that isn't actually a WordPress REST API at all)
+      // would otherwise surface as a cryptic "Unexpected token '<'" syntax
+      // error — this names the actual problem instead.
+      throw new WordPressApiError(
+        `"${url.pathname}" responded with status ${response.status} but the body wasn't valid ` +
+          "JSON — this URL may not be a WordPress REST API.",
+        response.status,
+      );
+    }
   }
 }
 

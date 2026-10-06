@@ -1,13 +1,7 @@
 "use server";
 
 import { requireUser } from "@/lib/auth/dal";
-import {
-  aiClient,
-  describeAiActionFailure,
-  faqListJsonSchema,
-  faqListSchema,
-  type FaqItemDraft,
-} from "@/lib/ai";
+import { aiClient, describeAiActionFailure, faqListSchema, type FaqItemDraft } from "@/lib/ai";
 import { getActiveSiteForCurrentUser } from "@/lib/cms";
 import { extractParagraphText, extractWords } from "@/lib/seo";
 import type { ContentBlock, PageType } from "@/types";
@@ -52,15 +46,16 @@ export async function generateFaqListAction(
       contentBlocks: input.contentBlocks,
       brandVoice: site?.brandVoice ?? undefined,
     });
-    const result = await aiClient.generateStructured<{ faqItems: FaqItemDraft[] }>(
+    // aiClient.generateStructured validates against faqListSchema itself
+    // (with a bounded retry on a malformed shape) — no separate parse step
+    // needed here anymore.
+    const result = await aiClient.generateStructured(
       "faq-generation",
       prompt,
-      faqListJsonSchema,
+      faqListSchema,
       { context: { userId: user.id, siteId: site?.id } },
     );
-    // Re-validate the provider's own JSON output against the same schema
-    // used to constrain it, same safety net as every other AI action.
-    return { faqItems: faqListSchema.parse(result.data).faqItems };
+    return { faqItems: result.data.faqItems };
   } catch (err) {
     return { error: describeAiActionFailure(err, "Failed to generate FAQs.") };
   }

@@ -1,13 +1,7 @@
 "use server";
 
 import { requireUser } from "@/lib/auth/dal";
-import {
-  aiClient,
-  altTextJsonSchema,
-  altTextSchema,
-  describeAiActionFailure,
-  type AltText,
-} from "@/lib/ai";
+import { aiClient, altTextSchema, describeAiActionFailure, type AltText } from "@/lib/ai";
 import { getActiveSiteForCurrentUser } from "@/lib/cms";
 import { buildAltTextPrompt } from "./prompt";
 
@@ -36,17 +30,17 @@ export async function generateAltTextAction(
 
   try {
     const prompt = buildAltTextPrompt({ pageTitle: input.pageTitle });
-    const result = await aiClient.generateWithVision<AltText>(
+    // aiClient.generateWithVision validates against altTextSchema itself
+    // (with a bounded retry on a malformed shape) — no separate parse step
+    // needed here anymore.
+    const result = await aiClient.generateWithVision(
       "alt-text-single",
       prompt,
       input.imageUrl,
-      altTextJsonSchema,
+      altTextSchema,
       { context: { userId: user.id, siteId: site?.id } },
     );
-    // Re-validate the provider's own JSON output against the same schema
-    // used to constrain it, same safety net as generatePageDraftAction.ts /
-    // generateSeoSuggestionsAction.ts.
-    return { altText: altTextSchema.parse(result.data) };
+    return { altText: result.data };
   } catch (err) {
     return { error: describeAiActionFailure(err, "Failed to generate alt text.") };
   }

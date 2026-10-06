@@ -110,13 +110,17 @@ describe("generateFaqListAction", () => {
     expect(result).toEqual({ error: "Groq is down" });
   });
 
-  it("returns an error when the provider's response fails schema validation (fewer than 3 items)", async () => {
-    generateStructuredMock.mockResolvedValue({
-      data: { faqItems: VALID_FAQ_ITEMS.slice(0, 1) },
-      usage: { inputTokens: 200, outputTokens: 150 },
-      provider: "groq",
-      model: "llama-3.3-70b-versatile",
-    });
+  it("returns an error when the provider's response fails schema validation even after aiClient's own retries", async () => {
+    // Schema validation + retry now live inside aiClient.generateStructured
+    // itself (SPEC.md's Day 31 task) — this mock stands in for what it does
+    // once every retry is exhausted: throw AiValidationError, never resolve
+    // with a too-short faqItems array.
+    const { AiValidationError } = await import("@/lib/ai");
+    generateStructuredMock.mockRejectedValue(
+      new AiValidationError("faq-generation", "groq", [
+        { code: "too_small", path: ["faqItems"], message: "Too few items" } as never,
+      ]),
+    );
 
     const result = await generateFaqListAction(INPUT);
 

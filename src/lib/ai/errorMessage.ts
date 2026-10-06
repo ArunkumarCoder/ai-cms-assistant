@@ -1,4 +1,5 @@
 import { AiProviderError } from "./types";
+import { AiValidationError } from "./validation";
 
 // Every AI-calling Server Action used to format a caught error the same
 // way — `err instanceof Error ? err.message : fallback` — which meant a raw
@@ -18,6 +19,15 @@ import { AiProviderError } from "./types";
 export function describeAiActionFailure(err: unknown, fallback: string): string {
   if (err instanceof AiProviderError && err.retryable) {
     return "The AI provider is busy right now — please try again in a moment.";
+  }
+  // client.ts's runValidated already retried this with the validation error
+  // fed back into the prompt (SPEC.md's Day 31 task) before ever reaching
+  // here — this message is only shown once every attempt has failed, so
+  // "try again" is still honest advice (a fresh call may land on a different
+  // random generation), while the technical issue list belongs in the logs
+  // (AiValidationError's own .message), not in a user-facing string.
+  if (err instanceof AiValidationError) {
+    return "The AI's response didn't come back in the right format, even after retrying. Please try again.";
   }
   return err instanceof Error ? err.message : fallback;
 }

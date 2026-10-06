@@ -9,9 +9,11 @@ import type { JsonSchema } from "../types";
 // text exist only inside this AI response; there's no persisted breakdown
 // equivalent to mirror, since this is a lighter pre-publish gut-check, not
 // `SeoAudit`'s five-category, per-page-history breakdown (seoSuggestions.ts).
+// `.min(1)`, not just `z.string()`: a sub-score with no reason text at all is
+// a failed generation, not valid-but-thin content (Day 31 audit).
 export const qualitySubScoreSchema = z.object({
   score: z.number().min(0).max(100),
-  reason: z.string(),
+  reason: z.string().min(1),
 });
 
 export const qualityScoreSchema = z.object({

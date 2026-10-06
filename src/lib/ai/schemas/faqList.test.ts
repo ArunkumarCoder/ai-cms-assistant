@@ -1,76 +1,77 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
+import { faqListSchema } from "./faqList";
 
-const getProviderMock = vi.fn();
-vi.mock("../providers/registry", () => ({ getProvider: getProviderMock }));
-vi.mock("../logging", () => ({
-  logAiCall: vi.fn().mockResolvedValue(undefined),
-}));
-
-const { aiClient } = await import("../client");
-const { faqListJsonSchema, faqListSchema } = await import("./faqList");
-
-function mockStructuredProvider(data: unknown) {
-  const generateStructured = vi.fn().mockResolvedValue({
-    data,
-    usage: { inputTokens: 300, outputTokens: 150 },
-    provider: "groq",
-    model: "llama-3.3-70b-versatile",
-  });
-  getProviderMock.mockReturnValue({ name: "groq", generateStructured });
-  return generateStructured;
-}
-
-beforeEach(() => {
-  getProviderMock.mockReset();
-});
+// Pure schema tests — see pageDraft.test.ts's top comment for why these
+// don't go through aiClient.
+const validFaqs = {
+  faqItems: [
+    {
+      question: "Do you offer emergency plumbing repairs?",
+      answer: "Yes, we offer 24/7 emergency service across Austin.",
+    },
+    {
+      question: "How much does a plumbing inspection cost?",
+      answer: "Inspections start at $89 and are waived with any repair.",
+    },
+    {
+      question: "Are your plumbers licensed?",
+      answer: "Every plumber we dispatch is licensed and insured.",
+    },
+  ],
+};
 
 describe("faqListSchema", () => {
-  it("validates a well-formed faq-generation response returned through generateStructured", async () => {
-    const validFaqs = {
-      faqItems: [
-        {
-          question: "Do you offer emergency plumbing repairs?",
-          answer: "Yes, we offer 24/7 emergency service across Austin.",
-        },
-        {
-          question: "How much does a plumbing inspection cost?",
-          answer: "Inspections start at $89 and are waived with any repair.",
-        },
-        {
-          question: "Are your plumbers licensed?",
-          answer: "Every plumber we dispatch is licensed and insured.",
-        },
-      ],
-    };
-    mockStructuredProvider(validFaqs);
-
-    const result = await aiClient.generateStructured(
-      "faq-generation",
-      "Draft FAQs for this plumbing page.",
-      faqListJsonSchema,
-    );
-
-    expect(faqListSchema.safeParse(result.data).success).toBe(true);
+  it("accepts a well-formed list of 3-8 FAQs", () => {
+    expect(faqListSchema.safeParse(validFaqs).success).toBe(true);
   });
 
-  it("rejects a malformed response (too few items, missing answer) instead of passing it through silently", async () => {
-    const malformed = {
-      faqItems: [
-        { question: "Do you offer emergency plumbing repairs?" },
-        {
-          question: "How much does a plumbing inspection cost?",
-          answer: "Inspections start at $89.",
-        },
-      ],
-    };
-    mockStructuredProvider(malformed);
+  it("accepts (and ignores) an extra, unexpected field on an item", () => {
+    expect(
+      faqListSchema.safeParse({
+        faqItems: validFaqs.faqItems.map((item) => ({ ...item, confidence: "high" })),
+      }).success,
+    ).toBe(true);
+  });
 
-    const result = await aiClient.generateStructured(
-      "faq-generation",
-      "Draft FAQs for this plumbing page.",
-      faqListJsonSchema,
+  it("rejects fewer than 3 items", () => {
+    expect(faqListSchema.safeParse({ faqItems: validFaqs.faqItems.slice(0, 2) }).success).toBe(
+      false,
     );
+  });
 
-    expect(faqListSchema.safeParse(result.data).success).toBe(false);
+  it("rejects more than 8 items", () => {
+    const nine = Array.from({ length: 9 }, (_, i) => ({
+      question: `Question ${i}?`,
+      answer: `Answer ${i}.`,
+    }));
+    expect(faqListSchema.safeParse({ faqItems: nine }).success).toBe(false);
+  });
+
+  it("rejects a missing required field (answer)", () => {
+    expect(
+      faqListSchema.safeParse({
+        faqItems: [
+          { question: "Do you offer emergency plumbing repairs?" },
+          ...validFaqs.faqItems.slice(1),
+        ],
+      }).success,
+    ).toBe(false);
+  });
+
+  it("rejects a wrong type (faqItems as a string instead of an array)", () => {
+    expect(faqListSchema.safeParse({ faqItems: "lots of great FAQs" }).success).toBe(false);
+  });
+
+  it("rejects an empty question or answer", () => {
+    expect(
+      faqListSchema.safeParse({
+        faqItems: [{ question: "", answer: "Yes." }, ...validFaqs.faqItems.slice(1)],
+      }).success,
+    ).toBe(false);
+  });
+
+  it("rejects a response that is valid JSON but an entirely different shape", () => {
+    expect(faqListSchema.safeParse(validFaqs.faqItems).success).toBe(false);
+    expect(faqListSchema.safeParse({ faqs: validFaqs.faqItems }).success).toBe(false);
   });
 });

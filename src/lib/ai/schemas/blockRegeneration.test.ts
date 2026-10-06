@@ -1,58 +1,47 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
+import { blockRegenerationSchema } from "./blockRegeneration";
 
-const getProviderMock = vi.fn();
-vi.mock("../providers/registry", () => ({ getProvider: getProviderMock }));
-vi.mock("../logging", () => ({
-  logAiCall: vi.fn().mockResolvedValue(undefined),
-}));
-
-const { aiClient } = await import("../client");
-const { blockRegenerationJsonSchema, blockRegenerationSchema } = await import(
-  "./blockRegeneration"
-);
-
-function mockStructuredProvider(data: unknown) {
-  const generateStructured = vi.fn().mockResolvedValue({
-    data,
-    usage: { inputTokens: 30, outputTokens: 60 },
-    provider: "groq",
-    model: "llama-3.3-70b-versatile",
-  });
-  getProviderMock.mockReturnValue({ name: "groq", generateStructured });
-  return generateStructured;
-}
-
-beforeEach(() => {
-  getProviderMock.mockReset();
-});
-
+// Pure schema tests — see pageDraft.test.ts's top comment for why these
+// don't go through aiClient.
 describe("blockRegenerationSchema", () => {
-  it("validates a well-formed block-regeneration response", async () => {
+  it("accepts a well-formed response", () => {
     const valid = {
       block: { type: "paragraph", content: "We fix leaks, clogs, and installs." },
     };
-    mockStructuredProvider(valid);
-
-    const result = await aiClient.generateStructured(
-      "block-regeneration",
-      "Rewrite this paragraph.",
-      blockRegenerationJsonSchema,
-    );
-
-    expect(blockRegenerationSchema.safeParse(result.data).success).toBe(true);
+    expect(blockRegenerationSchema.safeParse(valid).success).toBe(true);
   });
 
-  it("rejects a response whose block isn't one of the known variants", async () => {
+  it("accepts (and ignores) an extra, unexpected field", () => {
+    const valid = {
+      block: { type: "paragraph", content: "We fix leaks, clogs, and installs." },
+      confidence: "high",
+    };
+    expect(blockRegenerationSchema.safeParse(valid).success).toBe(true);
+  });
+
+  it("rejects a missing required field (block)", () => {
+    expect(blockRegenerationSchema.safeParse({}).success).toBe(false);
+  });
+
+  it("rejects a response whose block isn't one of the known variants", () => {
     const malformed = { block: { type: "video", content: "not a real block type" } };
-    mockStructuredProvider(malformed);
+    expect(blockRegenerationSchema.safeParse(malformed).success).toBe(false);
+  });
 
-    const result = await aiClient.generateStructured(
-      "block-regeneration",
-      "Rewrite this block.",
-      blockRegenerationJsonSchema,
-    );
+  it("rejects a wrong type (block as a string instead of an object)", () => {
+    expect(blockRegenerationSchema.safeParse({ block: "We fix leaks." }).success).toBe(false);
+  });
 
-    expect(blockRegenerationSchema.safeParse(result.data).success).toBe(false);
+  it("rejects an empty content string inside the block", () => {
+    expect(
+      blockRegenerationSchema.safeParse({ block: { type: "paragraph", content: "" } }).success,
+    ).toBe(false);
+  });
+
+  it("rejects a response that is valid JSON but an entirely different shape", () => {
+    expect(
+      blockRegenerationSchema.safeParse({ type: "paragraph", content: "We fix leaks." }).success,
+    ).toBe(false);
   });
 
   it("does not itself reject a type swap between two otherwise-valid block variants", () => {

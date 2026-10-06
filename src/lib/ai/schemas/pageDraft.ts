@@ -24,21 +24,26 @@ import type { JsonSchema } from "../types";
 // (unlike the TS type) needs a real shape to constrain the model to
 // producing. `id`/`order` are assigned by the app after generation (a fresh
 // id per block; order = array position) — the AI only owns content.
+// `content`/`href` require at least one character, not just a string —
+// Day 31's audit found every schema in this directory accepted an empty
+// string anywhere it accepted a string at all, which a strict type check
+// alone can't catch: a heading or CTA the model "generated" as "" is a
+// validation failure, not merely thin content.
 const headingBlockSchema = z.object({
   type: z.literal("heading"),
-  content: z.string(),
+  content: z.string().min(1),
   level: z.union([z.literal(2), z.literal(3), z.literal(4)]),
 });
 
 const paragraphBlockSchema = z.object({
   type: z.literal("paragraph"),
-  content: z.string(),
+  content: z.string().min(1),
 });
 
 const ctaBlockSchema = z.object({
   type: z.literal("cta"),
-  content: z.string(),
-  href: z.string(),
+  content: z.string().min(1),
+  href: z.string().min(1),
   openInNewTab: z.boolean(),
 });
 
@@ -49,9 +54,13 @@ export const pageDraftBlockSchema = z.discriminatedUnion("type", [
 ]);
 
 export const pageDraftSchema = z.object({
-  title: z.string(),
+  title: z.string().min(1),
+  // Not `.min(1)`: a blank slug is handled gracefully downstream
+  // (generatePageDraftAction.ts falls back to `slugify(title)`), unlike an
+  // empty title/metaDescription/block content, which has no fallback and is
+  // simply a failed generation.
   slug: z.string(),
-  metaDescription: z.string(),
+  metaDescription: z.string().min(1),
   // Nullable, not optional: OpenAI's strict `json_schema` mode requires
   // every property to be listed in `required` — a field that's merely
   // absent-when-not-required isn't representable there. Modeling "the AI has

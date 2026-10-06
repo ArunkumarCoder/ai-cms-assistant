@@ -83,13 +83,17 @@ describe("generateAltTextAction", () => {
     expect(result).toEqual({ error: "OpenAI request timed out" });
   });
 
-  it("returns an error when the provider's response fails schema validation", async () => {
-    generateWithVisionMock.mockResolvedValue({
-      data: { altText: "A bike.", confidence: "extremely high", needsReview: false },
-      usage: { inputTokens: 300, outputTokens: 40 },
-      provider: "openai",
-      model: "gpt-4o-mini",
-    });
+  it("returns an error when the provider's response fails schema validation even after aiClient's own retries", async () => {
+    // Schema validation + retry now live inside aiClient.generateWithVision
+    // itself (SPEC.md's Day 31 task) — this mock stands in for what it does
+    // once every retry is exhausted: throw AiValidationError, never resolve
+    // with a confidence value outside the enum.
+    const { AiValidationError } = await import("@/lib/ai");
+    generateWithVisionMock.mockRejectedValue(
+      new AiValidationError("alt-text-single", "openai", [
+        { code: "invalid_value", path: ["confidence"], message: "Invalid enum value" } as never,
+      ]),
+    );
 
     const result = await generateAltTextAction(INPUT);
 

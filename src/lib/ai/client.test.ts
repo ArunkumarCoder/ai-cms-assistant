@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import * as z from "zod";
 
 const getProviderMock = vi.fn();
 const logAiCallMock = vi.fn().mockResolvedValue(undefined);
@@ -15,6 +16,7 @@ vi.mock("./rateLimit", () => ({
 }));
 
 const { aiClient } = await import("./client");
+const { AiValidationError } = await import("./validation");
 
 function fakeTextResult(overrides: Record<string, unknown> = {}) {
   return {
@@ -110,29 +112,157 @@ describe("aiClient.generate", () => {
   });
 });
 
+// A deliberately minimal schema — these tests are about the validate/retry/
+// log machinery in client.ts, not about any one real feature's schema (those
+// live in ./schemas/*.test.ts).
+const scoreSchema = z.object({ score: z.number() });
+
+function structuredResult(data: unknown, overrides: Record<string, unknown> = {}) {
+  return {
+    data,
+    usage: { inputTokens: 1, outputTokens: 1 },
+    provider: "groq",
+    model: "llama-3.3-70b-versatile",
+    ...overrides,
+  };
+}
+
 describe("aiClient.generateStructured", () => {
-  it("passes the prompt and schema through to the resolved provider", async () => {
-    const schema = { type: "object" };
-    const generateStructured = vi.fn().mockResolvedValue({
-      data: { score: 88 },
-      usage: { inputTokens: 1, outputTokens: 1 },
-      provider: "groq",
-      model: "llama-3.3-70b-versatile",
-    });
+  it("converts the Zod schema to JSON Schema and passes it, with the prompt, to the resolved provider", async () => {
+    const generateStructured = vi.fn().mockResolvedValue(structuredResult({ score: 88 }));
     getProviderMock.mockReturnValue({ name: "groq", generateStructured });
 
-    const result = await aiClient.generateStructured(
-      "seo-scoring",
-      "Score this.",
-      schema,
-    );
+    const result = await aiClient.generateStructured("seo-scoring", "Score this.", scoreSchema);
 
     expect(generateStructured).toHaveBeenCalledWith(
       "Score this.",
-      schema,
+      z.toJSONSchema(scoreSchema),
       undefined,
     );
     expect(result.data).toEqual({ score: 88 });
+  });
+
+  it("returns schema-validated, typed data on a well-formed response — no caller-side parse needed", async () => {
+    const generateStructured = vi.fn().mockResolvedValue(structuredResult({ score: 42 }));
+    getProviderMock.mockReturnValue({ name: "groq", generateStructured });
+
+    const result = await aiClient.generateStructured("seo-scoring", "Score this.", scoreSchema);
+
+    expect(result.data.score).toBe(42);
+    expect(generateStructured).toHaveBeenCalledTimes(1);
+    expect(logAiCallMock).toHaveBeenCalledWith(expect.objectContaining({ success: true }));
+  });
+
+  // These three use "alt-text-single" (routes to openai, no fallback target
+  // configured — see FALLBACK_PROVIDER) rather than a groq-routed call type
+  // on purpose: groq's own fallback-to-openai would otherwise also fire on
+  // every validation failure (a real, separately-tested interaction — see
+  // "a Groq validation failure can still fall back to OpenAI" below), which
+  // would confuse a call count or prompt-identity assertion aimed purely at
+  // this retry loop with the unrelated fallback mechanism's own extra call.
+  it("retries with the validation error fed back into the prompt when the response fails the schema", async () => {
+    const generateStructured = vi
+      .fn()
+      .mockResolvedValueOnce(structuredResult({ score: "not a number" }, { provider: "openai" }))
+      .mockResolvedValueOnce(structuredResult({ score: 77 }, { provider: "openai" }));
+    getProviderMock.mockReturnValue({ name: "openai", generateStructured });
+
+    const result = await aiClient.generateStructured("alt-text-single", "Score this.", scoreSchema);
+
+    expect(result.data.score).toBe(77);
+    expect(generateStructured).toHaveBeenCalledTimes(2);
+    const [firstPrompt] = generateStructured.mock.calls[0];
+    const [secondPrompt] = generateStructured.mock.calls[1];
+    expect(secondPrompt).not.toBe(firstPrompt);
+    expect(secondPrompt).toContain("Score this.");
+    expect(secondPrompt).toContain("did not match the required JSON shape");
+    expect(secondPrompt).toContain("score");
+  });
+
+  it("logs each validation failure (provider, callType, which check failed) via the existing logging utility", async () => {
+    const generateStructured = vi
+      .fn()
+      .mockResolvedValueOnce(structuredResult({ score: "not a number" }, { provider: "openai" }))
+      .mockResolvedValueOnce(structuredResult({ score: 77 }, { provider: "openai" }));
+    getProviderMock.mockReturnValue({ name: "openai", generateStructured });
+
+    await aiClient.generateStructured("alt-text-single", "Score this.", scoreSchema);
+
+    expect(logAiCallMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        callType: "alt-text-single",
+        provider: "openai",
+        success: false,
+        errorMessage: expect.stringContaining("failed schema validation"),
+      }),
+    );
+    expect(logAiCallMock).toHaveBeenCalledWith(expect.objectContaining({ success: true }));
+  });
+
+  it("gives up after exhausting retries and throws AiValidationError, never returning invalid data", async () => {
+    const generateStructured = vi
+      .fn()
+      .mockResolvedValue(structuredResult({ score: "nope" }, { provider: "openai" }));
+    getProviderMock.mockReturnValue({ name: "openai", generateStructured });
+
+    await expect(
+      aiClient.generateStructured("alt-text-single", "Score this.", scoreSchema),
+    ).rejects.toBeInstanceOf(AiValidationError);
+    // 1 initial attempt + 2 retries = 3 calls, then give up — bounded, not
+    // unbounded, and never silently returns the malformed shape.
+    expect(generateStructured).toHaveBeenCalledTimes(3);
+  });
+
+  it("does not retry (or fall back) a validation failure for a provider with no fallback configured", async () => {
+    const generateStructured = vi.fn().mockResolvedValue(structuredResult({ score: "nope" }, { provider: "openai" }));
+    getProviderMock.mockReturnValue({ name: "openai", generateStructured });
+
+    await expect(
+      aiClient.generateStructured("alt-text-single", "Score this.", scoreSchema),
+    ).rejects.toBeInstanceOf(AiValidationError);
+    expect(getProviderMock).toHaveBeenCalledTimes(3); // one resolution per prompt-feedback attempt, no fallback
+    expect(generateStructured).toHaveBeenCalledTimes(3);
+  });
+
+  it("a Groq validation failure can still fall back to OpenAI, same as a transport failure would", async () => {
+    const groqGenerateStructured = vi.fn().mockResolvedValue(structuredResult({ score: "nope" }));
+    const openaiGenerateStructured = vi
+      .fn()
+      .mockResolvedValue(structuredResult({ score: 90 }, { provider: "openai" }));
+    getProviderMock.mockImplementation((name: string) =>
+      name === "groq"
+        ? { name: "groq", generateStructured: groqGenerateStructured }
+        : { name: "openai", generateStructured: openaiGenerateStructured },
+    );
+
+    const result = await aiClient.generateStructured("seo-scoring", "Score this.", scoreSchema);
+
+    expect(result.data.score).toBe(90);
+    expect(groqGenerateStructured).toHaveBeenCalledTimes(1);
+    expect(openaiGenerateStructured).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("aiClient.generateWithVision", () => {
+  it("retries with feedback while keeping the same image URL across attempts", async () => {
+    const generateWithVision = vi
+      .fn()
+      .mockResolvedValueOnce(structuredResult({ score: "not a number" }, { provider: "openai" }))
+      .mockResolvedValueOnce(structuredResult({ score: 5 }, { provider: "openai" }));
+    getProviderMock.mockReturnValue({ name: "openai", generateWithVision });
+
+    const result = await aiClient.generateWithVision(
+      "alt-text-single",
+      "Describe this.",
+      "https://example.com/a.jpg",
+      scoreSchema,
+    );
+
+    expect(result.data.score).toBe(5);
+    expect(generateWithVision).toHaveBeenCalledTimes(2);
+    for (const call of generateWithVision.mock.calls) {
+      expect(call[1]).toBe("https://example.com/a.jpg");
+    }
   });
 });
 

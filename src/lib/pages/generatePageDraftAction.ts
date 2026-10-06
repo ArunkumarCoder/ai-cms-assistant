@@ -1,13 +1,7 @@
 "use server";
 
 import { requireUser } from "@/lib/auth/dal";
-import {
-  aiClient,
-  describeAiActionFailure,
-  pageDraftJsonSchema,
-  pageDraftSchema,
-  type PageDraft,
-} from "@/lib/ai";
+import { aiClient, describeAiActionFailure, pageDraftSchema, type PageDraft } from "@/lib/ai";
 import { getActiveSiteForCurrentUser } from "@/lib/cms";
 import { buildPageGenerationPrompt, type PageBrief } from "./prompt";
 import { slugify } from "./slugify";
@@ -27,16 +21,17 @@ export async function generatePageDraftAction(
 
   try {
     const prompt = buildPageGenerationPrompt({ ...brief, brandVoice: site?.brandVoice ?? undefined });
-    const result = await aiClient.generateStructured<PageDraft>(
+    // aiClient.generateStructured validates the response against
+    // pageDraftSchema itself (with a bounded retry on a malformed shape,
+    // SPEC.md's Day 31 task) — result.data is already a real PageDraft here,
+    // not just a `T`-typed assertion over unchecked JSON.
+    const result = await aiClient.generateStructured(
       "page-generation",
       prompt,
-      pageDraftJsonSchema,
+      pageDraftSchema,
       { context: { userId: user.id, siteId: site?.id } },
     );
-    // Re-validate the provider's own JSON output against the same schema
-    // used to constrain it — generateStructured's `T` type param is a
-    // compile-time assertion, not a runtime guarantee.
-    const draft = pageDraftSchema.parse(result.data);
+    const draft = result.data;
     return { draft: { ...draft, slug: slugify(draft.slug || draft.title) } };
   } catch (err) {
     return { error: describeAiActionFailure(err, "Failed to generate a page draft.") };

@@ -15,9 +15,11 @@ import type { JsonSchema } from "../types";
 // the same way `qualityScore` was flagged and then added to `Page` on Day 5
 // (SPEC.md §7, point 1) rather than silently dropped or smuggled into
 // `suggestions` as unstructured text.
+// `.min(1)`, not just `z.string()`: an empty category/message is a failed
+// generation, not valid-but-thin content (Day 31 audit).
 export const seoSuggestionSchema = z.object({
-  category: z.string(),
-  message: z.string(),
+  category: z.string().min(1),
+  message: z.string().min(1),
 });
 
 export const seoBreakdownSchema = z.object({
@@ -32,9 +34,13 @@ export const seoSuggestionsSchema = z.object({
   score: z.number().min(0).max(100),
   breakdown: seoBreakdownSchema,
   suggestions: z.array(seoSuggestionSchema),
-  suggestedMetaTitle: z.string().nullable(),
-  suggestedMetaDescription: z.string().nullable(),
-  keywordGaps: z.array(z.string()),
+  // `null` means "no suggestion" (same nullable-not-optional reasoning as
+  // pageDraft.ts's targetKeyword); `.min(1)` only constrains the non-null
+  // case, so an empty-string "suggestion" doesn't slip through as a
+  // not-quite-null stand-in for "nothing to say."
+  suggestedMetaTitle: z.string().min(1).nullable(),
+  suggestedMetaDescription: z.string().min(1).nullable(),
+  keywordGaps: z.array(z.string().min(1)),
 });
 
 export type SeoSuggestion = z.infer<typeof seoSuggestionSchema>;

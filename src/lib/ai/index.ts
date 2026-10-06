@@ -16,6 +16,7 @@ export type {
   TokenUsage,
 } from "./types";
 export { AiProviderError } from "./types";
+export { AiValidationError } from "./validation";
 export { aiClient } from "./client";
 export { resolveProviderName } from "./routing";
 export { getProvider } from "./providers/registry";

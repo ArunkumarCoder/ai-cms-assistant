@@ -2,12 +2,7 @@
 
 import { requireUser } from "@/lib/auth/dal";
 import { getActiveSiteForCurrentUser } from "@/lib/cms";
-import {
-  aiClient,
-  blockRegenerationJsonSchema,
-  blockRegenerationSchema,
-  describeAiActionFailure,
-} from "@/lib/ai";
+import { aiClient, blockRegenerationSchema, describeAiActionFailure } from "@/lib/ai";
 import type { PageDraftBlock } from "@/lib/ai/schemas/pageDraft";
 import type { ContentBlock, PageType } from "@/types";
 import { buildBlockRegenerationPrompt } from "./prompt";
@@ -104,13 +99,18 @@ export async function regenerateBlockAction(
 
   let regenerated: PageDraftBlock;
   try {
-    const result = await aiClient.generateStructured<{ block: PageDraftBlock }>(
+    // aiClient.generateStructured validates against blockRegenerationSchema
+    // itself (with a bounded retry on a malformed shape) — no separate parse
+    // step needed here anymore. The block-type-match check right below is
+    // the one thing schema validation genuinely can't cover (see
+    // blockRegeneration.ts's own top comment) and stays here.
+    const result = await aiClient.generateStructured(
       "block-regeneration",
       prompt,
-      blockRegenerationJsonSchema,
+      blockRegenerationSchema,
       { context: { userId: user.id, siteId: site?.id } },
     );
-    regenerated = blockRegenerationSchema.parse(result.data).block;
+    regenerated = result.data.block;
   } catch (err) {
     return { error: describeAiActionFailure(err, "Failed to regenerate this block.") };
   }

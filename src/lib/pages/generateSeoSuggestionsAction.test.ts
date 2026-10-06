@@ -127,13 +127,17 @@ describe("generateSeoSuggestionsAction", () => {
     expect(result).toEqual({ error: "Groq is down" });
   });
 
-  it("returns an error when the provider's response fails schema validation", async () => {
-    generateStructuredMock.mockResolvedValue({
-      data: { ...VALID_SUGGESTIONS, score: 150 },
-      usage: { inputTokens: 10, outputTokens: 20 },
-      provider: "groq",
-      model: "llama-3.3-70b-versatile",
-    });
+  it("returns an error when the provider's response fails schema validation even after aiClient's own retries", async () => {
+    // Schema validation + retry now live inside aiClient.generateStructured
+    // itself (SPEC.md's Day 31 task) — this mock stands in for what it does
+    // once every retry is exhausted: throw AiValidationError, never resolve
+    // with the still-malformed data.
+    const { AiValidationError } = await import("@/lib/ai");
+    generateStructuredMock.mockRejectedValue(
+      new AiValidationError("seo-scoring", "groq", [
+        { code: "too_big", path: ["score"], message: "Too large" } as never,
+      ]),
+    );
 
     const result = await generateSeoSuggestionsAction(INPUT);
 

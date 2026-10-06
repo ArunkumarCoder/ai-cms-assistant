@@ -15,8 +15,11 @@ import type { JsonSchema } from "../types";
 // review pass); it's a hint for that UI step, not something persisted
 // alongside the image, so it deliberately has no domain-type field to
 // mirror.
+// `.min(1)`, not just `z.string()`: an empty altText defeats the entire
+// point of the feature and is a failed generation, not valid-but-thin
+// content (Day 31 audit).
 export const altTextSchema = z.object({
-  altText: z.string(),
+  altText: z.string().min(1),
   confidence: z.enum(["high", "medium", "low"]),
   needsReview: z.boolean(),
 });

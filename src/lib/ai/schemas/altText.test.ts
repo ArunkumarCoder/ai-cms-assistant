@@ -1,69 +1,45 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
+import { altTextSchema } from "./altText";
 
-const getProviderMock = vi.fn();
-vi.mock("../providers/registry", () => ({ getProvider: getProviderMock }));
-vi.mock("../logging", () => ({
-  logAiCall: vi.fn().mockResolvedValue(undefined),
-}));
-
-const { aiClient } = await import("../client");
-const { altTextJsonSchema, altTextSchema } = await import("./altText");
-
-function mockStructuredProvider(data: unknown) {
-  const generateWithVision = vi.fn().mockResolvedValue({
-    data,
-    usage: { inputTokens: 300, outputTokens: 40 },
-    provider: "openai",
-    model: "gpt-4o-mini",
-  });
-  getProviderMock.mockReturnValue({ name: "openai", generateWithVision });
-  return generateWithVision;
-}
-
-beforeEach(() => {
-  getProviderMock.mockReset();
-});
+// Pure schema tests — see pageDraft.test.ts's top comment for why these
+// don't go through aiClient.
+const validAltText = {
+  altText: "A licensed plumber repairing a leaking pipe under a sink.",
+  confidence: "high",
+  needsReview: false,
+};
 
 describe("altTextSchema", () => {
-  it("validates a well-formed alt-text-single response returned through generateWithVision", async () => {
-    const validAltText = {
-      altText: "A licensed plumber repairing a leaking pipe under a sink.",
-      confidence: "high",
-      needsReview: false,
-    };
-    const generateWithVision = mockStructuredProvider(validAltText);
-
-    const result = await aiClient.generateWithVision(
-      "alt-text-single",
-      "Describe this image for accessibility.",
-      "https://example.com/plumber.jpg",
-      altTextJsonSchema,
-    );
-
-    expect(generateWithVision).toHaveBeenCalledWith(
-      "Describe this image for accessibility.",
-      "https://example.com/plumber.jpg",
-      altTextJsonSchema,
-      undefined,
-    );
-    expect(altTextSchema.safeParse(result.data).success).toBe(true);
+  it("accepts a well-formed response", () => {
+    expect(altTextSchema.safeParse(validAltText).success).toBe(true);
   });
 
-  it("rejects a malformed response (confidence outside the enum) instead of passing it through silently", async () => {
-    const malformed = {
-      altText: "A person working on a pipe.",
-      confidence: "very high",
-      needsReview: false,
-    };
-    mockStructuredProvider(malformed);
+  it("accepts (and ignores) an extra, unexpected field", () => {
+    expect(altTextSchema.safeParse({ ...validAltText, source: "vision-model" }).success).toBe(true);
+  });
 
-    const result = await aiClient.generateWithVision(
-      "alt-text-single",
-      "Describe this image for accessibility.",
-      "https://example.com/plumber.jpg",
-      altTextJsonSchema,
+  it("rejects a missing required field (needsReview)", () => {
+    const { needsReview, ...rest } = validAltText;
+    void needsReview;
+    expect(altTextSchema.safeParse(rest).success).toBe(false);
+  });
+
+  it("rejects a confidence value outside the enum", () => {
+    expect(altTextSchema.safeParse({ ...validAltText, confidence: "very high" }).success).toBe(
+      false,
     );
+  });
 
-    expect(altTextSchema.safeParse(result.data).success).toBe(false);
+  it("rejects a wrong type (needsReview as a string instead of a boolean)", () => {
+    expect(altTextSchema.safeParse({ ...validAltText, needsReview: "false" }).success).toBe(false);
+  });
+
+  it("rejects an empty altText", () => {
+    expect(altTextSchema.safeParse({ ...validAltText, altText: "" }).success).toBe(false);
+  });
+
+  it("rejects a response that is valid JSON but an entirely different shape", () => {
+    expect(altTextSchema.safeParse({ description: validAltText.altText }).success).toBe(false);
+    expect(altTextSchema.safeParse(validAltText.altText).success).toBe(false);
   });
 });

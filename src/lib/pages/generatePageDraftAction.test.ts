@@ -124,13 +124,18 @@ describe("generatePageDraftAction", () => {
     expect(result).toEqual({ error: "Groq is down" });
   });
 
-  it("returns an error when the provider's response fails schema validation", async () => {
-    generateStructuredMock.mockResolvedValue({
-      data: { ...VALID_DRAFT, contentBlocks: [{ type: "video", content: "nope" }] },
-      usage: { inputTokens: 10, outputTokens: 20 },
-      provider: "groq",
-      model: "llama-3.3-70b-versatile",
-    });
+  it("returns an error when the provider's response fails schema validation even after aiClient's own retries", async () => {
+    // Schema validation + retry now live inside aiClient.generateStructured
+    // itself (SPEC.md's Day 31 task) — this mock stands in for what it does
+    // once every retry is exhausted: throw AiValidationError, never resolve
+    // with the still-malformed data. The action's own job is just to turn
+    // that into a clean user-facing error, which is what this test checks.
+    const { AiValidationError } = await import("@/lib/ai");
+    generateStructuredMock.mockRejectedValue(
+      new AiValidationError("page-generation", "groq", [
+        { code: "invalid_type", path: ["contentBlocks", 0, "type"], message: "Invalid type" } as never,
+      ]),
+    );
 
     const result = await generatePageDraftAction(BRIEF);
 

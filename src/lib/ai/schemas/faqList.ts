@@ -13,9 +13,11 @@ import type { JsonSchema } from "../types";
 // `input` is always a JSON object (see AnthropicProvider.generateStructured's
 // `tools`/`tool_choice`) — a top-level array schema isn't representable
 // there, so every schema in this directory has an object root.
+// `.min(1)`, not just `z.string()`: an empty question or answer is a failed
+// generation, not valid-but-thin content (Day 31 audit).
 export const faqItemDraftSchema = z.object({
-  question: z.string(),
-  answer: z.string(),
+  question: z.string().min(1),
+  answer: z.string().min(1),
 });
 
 export const faqListSchema = z.object({

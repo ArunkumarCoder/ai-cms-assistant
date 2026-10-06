@@ -4,7 +4,6 @@ import { requireUser } from "@/lib/auth/dal";
 import {
   aiClient,
   describeAiActionFailure,
-  seoSuggestionsJsonSchema,
   seoSuggestionsSchema,
   type SeoSuggestions,
 } from "@/lib/ai";
@@ -22,15 +21,16 @@ export async function generateSeoSuggestionsAction(
 
   try {
     const prompt = buildSeoSuggestionsPrompt({ ...input, brandVoice: site?.brandVoice ?? undefined });
-    const result = await aiClient.generateStructured<SeoSuggestions>(
+    // aiClient.generateStructured validates against seoSuggestionsSchema
+    // itself (with a bounded retry on a malformed shape) — no separate parse
+    // step needed here anymore.
+    const result = await aiClient.generateStructured(
       "seo-scoring",
       prompt,
-      seoSuggestionsJsonSchema,
+      seoSuggestionsSchema,
       { context: { userId: user.id, siteId: site?.id } },
     );
-    // Re-validate the provider's own JSON output against the same schema
-    // used to constrain it, same safety net as generatePageDraftAction.ts.
-    return { suggestions: seoSuggestionsSchema.parse(result.data) };
+    return { suggestions: result.data };
   } catch (err) {
     return { error: describeAiActionFailure(err, "Failed to generate SEO suggestions.") };
   }

@@ -10,6 +10,7 @@ import type {
   Site,
 } from "@/types";
 import type { CmsAdapter } from "./adapter";
+import { CmsAdapterError } from "./errors";
 import type {
   CreatePageInput,
   ImageListFilter,
@@ -93,6 +94,40 @@ export class WordPressApiError extends Error {
     super(message);
     this.name = "WordPressApiError";
   }
+}
+
+// Turns a WordPressApiError (or anything else a client call/mapping step
+// threw) into a CmsAdapterError, classified from the one signal
+// WordPressApiError already carries: `status`. `undefined` only ever happens
+// on the network-level catch in FetchWordPressApiClient.request() (no HTTP
+// response was ever received); a 2xx status paired with an error can only
+// mean the "valid status but the body wasn't JSON" branch in that same
+// method, since `!response.ok` already handles every other 4xx/5xx by
+// throwing with that status directly. Any other status (a plain 500, a 404
+// that isn't the 401/403/429 cases below) is bucketed into
+// "malformed-response" too — there's no dedicated "server error" kind in
+// today's 4-category task list, and "the CMS gave us something we can't
+// trust" is an honest description of a request that failed for a reason
+// that isn't auth or rate limiting.
+function classifyWordPressError(err: unknown): CmsAdapterError {
+  if (err instanceof WordPressApiError) {
+    if (err.status === undefined) {
+      return new CmsAdapterError("wordpress", "network", err.message, { cause: err });
+    }
+    if (err.status === 401 || err.status === 403) {
+      return new CmsAdapterError("wordpress", "auth", err.message, { cause: err });
+    }
+    if (err.status === 429) {
+      return new CmsAdapterError("wordpress", "rate-limited", err.message, { cause: err });
+    }
+    return new CmsAdapterError("wordpress", "malformed-response", err.message, { cause: err });
+  }
+  return new CmsAdapterError(
+    "wordpress",
+    "malformed-response",
+    err instanceof Error ? err.message : String(err),
+    { cause: err },
+  );
 }
 
 export class FetchWordPressApiClient implements WordPressApiClient {
@@ -204,23 +239,27 @@ export class WordPressAdapter implements CmsAdapter {
   ) {}
 
   async getPages(): Promise<PageSummary[]> {
-    const rows = await this.client.get<WpPage[]>(`/${PAGE_ENDPOINT}`, {
-      status: ALL_STATUSES,
-      context: "edit",
-      per_page: "100",
-      orderby: "modified",
-      order: "desc",
-      _fields: PAGE_LIST_FIELDS,
-    });
+    const rows = await this.callClient(() =>
+      this.client.get<WpPage[]>(`/${PAGE_ENDPOINT}`, {
+        status: ALL_STATUSES,
+        context: "edit",
+        per_page: "100",
+        orderby: "modified",
+        order: "desc",
+        _fields: PAGE_LIST_FIELDS,
+      }),
+    );
     return rows.map((row) => toPageSummary(row, this.site));
   }
 
   async getPage(slug: string): Promise<Page | null> {
-    const rows = await this.client.get<WpPage[]>(`/${PAGE_ENDPOINT}`, {
-      slug,
-      status: ALL_STATUSES,
-      context: "edit",
-    });
+    const rows = await this.callClient(() =>
+      this.client.get<WpPage[]>(`/${PAGE_ENDPOINT}`, {
+        slug,
+        status: ALL_STATUSES,
+        context: "edit",
+      }),
+    );
     const row = rows[0];
     return row ? this.toPageResolved(row) : null;
   }
@@ -241,14 +280,17 @@ export class WordPressAdapter implements CmsAdapter {
       _ai_cms_quality_score: data.qualityScore != null ? String(data.qualityScore) : "",
       _ai_cms_faq_items: JSON.stringify(faqItemsToWp(data.faqItems ?? [])),
     };
+    const content = await contentBlocksToGutenberg(data.contentBlocks ?? [], this.client);
 
-    const created = await this.client.post<{ id: number }>(`/${PAGE_ENDPOINT}`, {
-      title: data.title,
-      slug: data.slug,
-      status: toWpStatus(data.status ?? "draft"),
-      content: await contentBlocksToGutenberg(data.contentBlocks ?? [], this.client),
-      meta,
-    });
+    const created = await this.callClient(() =>
+      this.client.post<{ id: number }>(`/${PAGE_ENDPOINT}`, {
+        title: data.title,
+        slug: data.slug,
+        status: toWpStatus(data.status ?? "draft"),
+        content,
+        meta,
+      }),
+    );
 
     return this.fetchPageByIdOrThrow(created.id);
   }
@@ -279,16 +321,18 @@ export class WordPressAdapter implements CmsAdapter {
     if (data.faqItems !== undefined) meta._ai_cms_faq_items = JSON.stringify(faqItemsToWp(data.faqItems));
     if (Object.keys(meta).length > 0) payload.meta = meta;
 
-    await this.client.post(`/${PAGE_ENDPOINT}/${cmsDocumentId}`, payload);
+    await this.callClient(() => this.client.post(`/${PAGE_ENDPOINT}/${cmsDocumentId}`, payload));
 
     return this.fetchPageByIdOrThrow(cmsDocumentId);
   }
 
   async listImages(filter?: ImageListFilter): Promise<ImageAsset[]> {
-    const rows = await this.client.get<WpMedia[]>("/media", {
-      media_type: "image",
-      per_page: "100",
-    });
+    const rows = await this.callClient(() =>
+      this.client.get<WpMedia[]>("/media", {
+        media_type: "image",
+        per_page: "100",
+      }),
+    );
     const images = rows.map((row) => toImageAsset(row, this.site));
     if (!filter?.altTextStatus) return images;
     return images.filter((image) => image.altTextStatus === filter.altTextStatus);
@@ -303,15 +347,36 @@ export class WordPressAdapter implements CmsAdapter {
       payload.meta = { _ai_cms_alt_text_status: data.altTextStatus };
     }
 
-    await this.client.post(`/media/${cmsAssetId}`, payload);
+    await this.callClient(() => this.client.post(`/media/${cmsAssetId}`, payload));
 
-    const updated = await this.client.get<WpMedia>(`/media/${cmsAssetId}`);
+    const updated = await this.callClient(() => this.client.get<WpMedia>(`/media/${cmsAssetId}`));
     return toImageAsset(updated, this.site);
   }
 
   private async fetchPageByIdOrThrow(id: string | number): Promise<Page> {
-    const row = await this.client.get<WpPage>(`/${PAGE_ENDPOINT}/${id}`, { context: "edit" });
+    const row = await this.callClient(() =>
+      this.client.get<WpPage>(`/${PAGE_ENDPOINT}/${id}`, { context: "edit" }),
+    );
     return this.toPageResolved(row);
+  }
+
+  // Every direct call to `this.client` funnels through here so a genuine
+  // transport/API failure (auth rejected, unreachable host, rate limited, a
+  // response that wasn't usable) always surfaces as one typed
+  // CmsAdapterError, never the client's own raw WordPressApiError (or
+  // whatever else a caller's own client implementation might throw) leaking
+  // past this adapter. Deliberately scoped to just the client call, not the
+  // whole method body: input-validation errors (assertCreatePageInput) and
+  // content-translation errors (contentBlocksToGutenberg rejecting a
+  // malformed ContentBlock) are the *caller's* problem, not the CMS's, and
+  // stay exactly as they already were — plain, specific Errors — rather than
+  // being misclassified as "the CMS sent something malformed."
+  private async callClient<T>(fn: () => Promise<T>): Promise<T> {
+    try {
+      return await fn();
+    } catch (err) {
+      throw classifyWordPressError(err);
+    }
   }
 
   // Resolves each image block's *real* per-attachment alt-text status

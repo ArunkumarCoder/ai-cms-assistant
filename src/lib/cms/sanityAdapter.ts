@@ -25,6 +25,7 @@ import type {
 } from "@/sanity/types";
 import { getWriteClient } from "@/sanity/writeClient";
 import type { CmsAdapter } from "./adapter";
+import { CmsAdapterError } from "./errors";
 import type {
   CreatePageInput,
   ImageListFilter,
@@ -32,6 +33,39 @@ import type {
   UpdateImageInput,
   UpdatePageInput,
 } from "./types";
+
+// Classifies whatever `this.client` throws into a typed CmsAdapterError,
+// mirroring WordPressAdapter's own `classifyWordPressError` (see its comment
+// for the full reasoning). The real `@sanity/client` SDK's `ClientError`/
+// `ServerError` both carry a `statusCode: number`; a thrown value with none
+// at all means the request never got an HTTP response in the first place —
+// a network-level failure. Scoped to calls made through `callClient` only
+// (see that method) — an adapter-thrown business error ("no image found
+// with that key," a CreatePageInput validation failure) never reaches this
+// function, so it's never at risk of being misclassified as a CMS problem.
+function classifySanityError(err: unknown): CmsAdapterError {
+  const statusCode =
+    typeof err === "object" && err !== null && "statusCode" in err
+      ? (err as { statusCode?: unknown }).statusCode
+      : undefined;
+  const message = err instanceof Error ? err.message : String(err);
+
+  if (statusCode === 401 || statusCode === 403) {
+    return new CmsAdapterError("sanity", "auth", message, { cause: err });
+  }
+  if (statusCode === 429) {
+    return new CmsAdapterError("sanity", "rate-limited", message, { cause: err });
+  }
+  if (typeof statusCode === "number") {
+    // Some other HTTP-level failure (5xx, etc.) — the CMS responded, just
+    // not usefully; bucketed with "malformed-response" for the same reason
+    // WordPressAdapter's classifier does.
+    return new CmsAdapterError("sanity", "malformed-response", message, { cause: err });
+  }
+  // No statusCode at all — the request never reached a response at all
+  // (DNS, connection refused, timeout).
+  return new CmsAdapterError("sanity", "network", message, { cause: err });
+}
 
 // Sanity implementation of CmsAdapter (see ./adapter.ts for the interface
 // contract this satisfies). Day 5 — first real Sanity write traffic in this
@@ -93,15 +127,15 @@ export class SanityAdapter implements CmsAdapter {
   ) {}
 
   async getPages(): Promise<PageSummary[]> {
-    const rows = await this.client.fetch<PageListItem[]>(PAGES_LIST_QUERY, {}, NO_STORE);
+    const rows = await this.callClient(() =>
+      this.client.fetch<PageListItem[]>(PAGES_LIST_QUERY, {}, NO_STORE),
+    );
     return rows.map((row) => toPageSummary(row, this.site));
   }
 
   async getPage(slug: string): Promise<Page | null> {
-    const raw = await this.client.fetch<PageDetail | null>(
-      PAGE_BY_SLUG_QUERY,
-      { slug },
-      NO_STORE,
+    const raw = await this.callClient(() =>
+      this.client.fetch<PageDetail | null>(PAGE_BY_SLUG_QUERY, { slug }, NO_STORE),
     );
     return raw ? toPage(raw, this.site) : null;
   }
@@ -109,18 +143,20 @@ export class SanityAdapter implements CmsAdapter {
   async createPage(data: CreatePageInput): Promise<Page> {
     assertCreatePageInput(data);
 
-    const created = await this.client.create({
-      _type: "page",
-      title: data.title,
-      slug: { _type: "slug", current: data.slug },
-      pageType: data.pageType,
-      status: data.status ?? "draft",
-      targetKeyword: data.targetKeyword,
-      seo: { metaDescription: data.metaDescription },
-      qualityScore: data.qualityScore ?? null,
-      body: contentBlocksToPortableText(data.contentBlocks ?? []),
-      faqItems: faqItemsToSanity(data.faqItems ?? []),
-    });
+    const created = await this.callClient(() =>
+      this.client.create({
+        _type: "page",
+        title: data.title,
+        slug: { _type: "slug", current: data.slug },
+        pageType: data.pageType,
+        status: data.status ?? "draft",
+        targetKeyword: data.targetKeyword,
+        seo: { metaDescription: data.metaDescription },
+        qualityScore: data.qualityScore ?? null,
+        body: contentBlocksToPortableText(data.contentBlocks ?? []),
+        faqItems: faqItemsToSanity(data.faqItems ?? []),
+      }),
+    );
 
     return this.fetchPageByIdOrThrow(created._id);
   }
@@ -141,7 +177,7 @@ export class SanityAdapter implements CmsAdapter {
     if (data.faqItems !== undefined) fields.faqItems = faqItemsToSanity(data.faqItems);
     if (data.qualityScore !== undefined) fields.qualityScore = data.qualityScore;
 
-    await this.client.patch(cmsDocumentId).set(fields).commit();
+    await this.callClient(() => this.client.patch(cmsDocumentId).set(fields).commit());
 
     return this.fetchPageByIdOrThrow(cmsDocumentId);
   }
@@ -155,10 +191,12 @@ export class SanityAdapter implements CmsAdapter {
   async updateImage(cmsAssetId: string, data: UpdateImageInput): Promise<ImageAsset> {
     assertUpdateImageInput(data);
 
-    const owner = await this.client.fetch<{ _id: string } | null>(
-      PAGE_CONTAINING_IMAGE_KEY_QUERY,
-      { key: cmsAssetId },
-      NO_STORE,
+    const owner = await this.callClient(() =>
+      this.client.fetch<{ _id: string } | null>(
+        PAGE_CONTAINING_IMAGE_KEY_QUERY,
+        { key: cmsAssetId },
+        NO_STORE,
+      ),
     );
     if (!owner) {
       throw new Error(
@@ -175,7 +213,7 @@ export class SanityAdapter implements CmsAdapter {
       fields[`body[_key=="${cmsAssetId}"].altTextStatus`] = data.altTextStatus;
     }
 
-    await this.client.patch(owner._id).set(fields).commit();
+    await this.callClient(() => this.client.patch(owner._id).set(fields).commit());
 
     const images = await this.fetchAllImages();
     const updated = images.find((image) => image.cmsAssetId === cmsAssetId);
@@ -186,7 +224,9 @@ export class SanityAdapter implements CmsAdapter {
   }
 
   private async fetchPageByIdOrThrow(id: string): Promise<Page> {
-    const raw = await this.client.fetch<PageDetail | null>(PAGE_BY_ID_QUERY, { id }, NO_STORE);
+    const raw = await this.callClient(() =>
+      this.client.fetch<PageDetail | null>(PAGE_BY_ID_QUERY, { id }, NO_STORE),
+    );
     if (!raw) {
       throw new Error(`Page "${id}" was written but could not be re-fetched.`);
     }
@@ -194,16 +234,27 @@ export class SanityAdapter implements CmsAdapter {
   }
 
   private async fetchAllImages(): Promise<ImageAsset[]> {
-    const rows = await this.client.fetch<PageWithImageBlocks[]>(
-      PAGES_WITH_IMAGE_BLOCKS_QUERY,
-      {},
-      NO_STORE,
+    const rows = await this.callClient(() =>
+      this.client.fetch<PageWithImageBlocks[]>(PAGES_WITH_IMAGE_BLOCKS_QUERY, {}, NO_STORE),
     );
     return rows.flatMap((page) =>
       page.images
         .filter((image) => image.asset)
         .map((image) => toImageAsset(image, page, this.site)),
     );
+  }
+
+  // Every direct call to `this.client` funnels through here — see
+  // WordPressAdapter's identical `callClient` for the full reasoning (same
+  // method name, same scoping rule: input-validation and business-logic
+  // errors never pass through this wrapper, only genuine client/transport
+  // failures do).
+  private async callClient<T>(fn: () => Promise<T>): Promise<T> {
+    try {
+      return await fn();
+    } catch (err) {
+      throw classifySanityError(err);
+    }
   }
 }
 

@@ -9,7 +9,8 @@ import { requireUser } from "@/lib/auth/dal";
 import { prisma } from "@/lib/db";
 import { setActiveSiteCookie } from "@/lib/sites/activeSite";
 import { SanityAdapter } from "./sanityAdapter";
-import { FetchWordPressApiClient, WordPressAdapter, WordPressApiError } from "./wordpressAdapter";
+import { CmsAdapterError } from "./errors";
+import { FetchWordPressApiClient, WordPressAdapter } from "./wordpressAdapter";
 
 export type ConnectSiteState = { error?: string } | undefined;
 
@@ -204,8 +205,13 @@ async function diagnoseWordPressFailure(
   originalError: unknown,
 ): Promise<string> {
   // A network-level failure (DNS, connection refused, TLS) already produces
-  // a specific, actionable WordPressApiError message — no need to re-probe.
-  if (originalError instanceof WordPressApiError && originalError.status === undefined) {
+  // a specific, actionable message — no need to re-probe. `testAdapter.
+  // getPages()` now throws a CmsAdapterError (wordpressAdapter.ts's own
+  // callClient/classifyWordPressError, added for the shared adapter-contract
+  // failure tests) rather than the raw WordPressApiError this check
+  // originally looked for; the "network" kind is the one it actually cares
+  // about here.
+  if (originalError instanceof CmsAdapterError && originalError.kind === "network") {
     return originalError.message;
   }
 

@@ -189,11 +189,14 @@ describe("connectSiteAction", () => {
   });
 
   it("does not persist a WordPress Site when a network-level failure occurs, and surfaces that specific reason", async () => {
-    const { WordPressApiError } = await import("./wordpressAdapter");
-    // No `status` — simulates a network-level failure (DNS, connection
-    // refused), which diagnoseWordPressFailure surfaces directly without
+    const { CmsAdapterError } = await import("./errors");
+    // kind: "network" — simulates what WordPressAdapter's own
+    // callClient/classifyWordPressError now throws for a DNS/connection
+    // failure, which diagnoseWordPressFailure surfaces directly without
     // re-probing the connection (no real fetch calls in this test).
-    wpGetPagesMock.mockRejectedValue(new WordPressApiError('Couldn\'t reach "http://nope.invalid" — fetch failed.'));
+    wpGetPagesMock.mockRejectedValue(
+      new CmsAdapterError("wordpress", "network", 'Couldn\'t reach "http://nope.invalid" — fetch failed.'),
+    );
 
     const result = await connectSiteAction(
       undefined,

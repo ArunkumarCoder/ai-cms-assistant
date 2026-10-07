@@ -6,7 +6,7 @@ See [SPEC.md](./SPEC.md) for the full product spec, data model, day-by-day build
 
 ## Status
 
-Phases 1–5 (Sanity: content model, AI generation/SEO/alt-text/FAQs, review workflow, dashboards, provider resilience) are complete and exercised end to end. Phase 6 added a second CMS: a WordPress `CmsAdapter` implementing the full read/write contract (REST API + Application Passwords + a small companion mu-plugin for custom fields), verified against a real WordPress install through the same unmodified screens and AI features Sanity uses — see SPEC.md §22–25 for the full build log, including two real bugs found and fixed along the way (one of which, a `withQualityScoring` defect, affected Sanity too). Next: Phase 7, automated JSON-schema validation across every structured AI response.
+Phases 1–5 (Sanity: content model, AI generation/SEO/alt-text/FAQs, review workflow, dashboards, provider resilience) are complete and exercised end to end. Phase 6 added a second CMS: a WordPress `CmsAdapter` implementing the full read/write contract (REST API + Application Passwords + a small companion mu-plugin for custom fields), verified against a real WordPress install through the same unmodified screens and AI features Sanity uses — see SPEC.md §22–26 for the full build log, including real bugs found and fixed along the way (one of which, a `withQualityScoring` defect, affected Sanity too). Phase 7 (testing and polish) is underway: every structured AI response is now schema-validated with a shared, bounded retry policy (SPEC.md §27), and both `CmsAdapter` implementations share one contract test suite plus failure-path coverage with CI running on every push (SPEC.md §28, below).
 
 ## Stack
 
@@ -61,6 +61,24 @@ See [SPEC.md §22–25](./SPEC.md) for the full content-model mapping (Gutenberg
 - `npm run lint` — ESLint
 - `npm run format` — Prettier, writes changes
 - `npm run format:check` — Prettier, check only (CI-friendly)
+- `npm test` — the full Vitest suite (unit tests, the shared CmsAdapter contract suite, AI schema/validation tests — everything under `src/**/*.test.ts`, one command)
+- `npm run test:coverage` — the same suite with a coverage report (text + HTML in `coverage/`, gitignored)
+
+## Testing
+
+Everything runs through one command, `npm test` — there's no separate suite to remember to also run. [`.github/workflows/ci.yml`](./.github/workflows/ci.yml) runs lint, a type-check, and the full test suite with coverage on every push and pull request, with no real database or API keys needed (`DATABASE_URL` is a placeholder — `prisma generate` only needs a syntactically valid connection string, it never connects).
+
+**The shared adapter contract suite** (`src/lib/cms/adapterContract.test.ts` + `adapterContract.failures.test.ts`) is the one most worth knowing about: the same test bodies run against both `SanityAdapter` and `WordPressAdapter`, built from hand-written fixtures in `src/lib/cms/__fixtures__/` that render one CMS-agnostic "canonical" page/image into each CMS's own real raw REST/GROQ response shape. It covers the full `CmsAdapter` contract (list/get/create/update pages, list/update images, including a page missing every optional field and an empty collection) plus all four client-level failure modes (auth rejected, network error, malformed response, rate limited) for both adapters — and asserts, rather than skips, the one place their behavior genuinely differs: WordPress's documented alt-text-status fallback (SPEC.md §24) when an image was never touched by this app.
+
+**Coverage** on the two layers that actually carry this project's architecture (`src/lib/cms/`, `src/lib/ai/` — not the whole `src/` tree, since a UI regression here isn't where a silent bug would be most expensive):
+
+| | Statements | Branches | Functions | Lines |
+|---|---|---|---|---|
+| **Combined** | 85.2% | 75.4% | 93.4% | 87.2% |
+| `lib/ai/` | 96.0% | 87.9% | 94.9% | 98.1% |
+| `lib/cms/` | 83.9% | 75.5% | 94.5% | 85.9% |
+
+Not chasing 100% — the real gaps are specific and known rather than hidden: `lib/ai/providers/registry.ts` (14%) only picks which already-well-tested provider class to construct from an API key in `process.env`, which isn't meaningfully testable without either a real key or mocking three SDK constructors for little value; each provider's own `getDefaultClient()` (the "construct the real SDK client" branch, as opposed to the injected-mock-client branch every other test uses) is similarly wiring, not logic. Run `npm run test:coverage` and open `coverage/index.html` for the full per-file breakdown.
 
 ## Project structure
 
@@ -69,6 +87,7 @@ src/
   app/    # Next.js App Router routes
   lib/
     cms/  # CmsAdapter interface + Sanity/WordPress implementations + per-user resolution
+      __fixtures__/ # Shared test fixtures powering the adapter contract suite
     ai/   # Provider-agnostic AI adapter interface (OpenAI, Claude, Groq)
     auth/ # Auth.js config, Server Actions, password hashing, session DAL
     crypto/ # Encryption for stored third-party credentials (Sanity tokens, WordPress app passwords)
@@ -76,6 +95,7 @@ src/
 prisma/     # User/Site schema + migrations (accounts, connected Sites)
 studio/     # Standalone Sanity Studio (its own app — see SPEC.md for why)
 wordpress/  # WordPress-side companion mu-plugin (schema-as-code, mirrors studio/)
+.github/workflows/ # CI: lint, type-check, full test suite with coverage
 ```
 
 ## Sanity Studio

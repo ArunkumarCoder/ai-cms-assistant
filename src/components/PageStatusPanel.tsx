@@ -67,6 +67,7 @@ export function PageStatusPanel({ page }: { page: Page }) {
           Status
         </span>
         <span
+          role="status"
           className={`rounded-full px-3 py-1 text-sm font-medium ${STATUS_CLASS[page.status]}`}
         >
           {STATUS_LABEL[page.status]}
@@ -92,7 +93,10 @@ export function PageStatusPanel({ page }: { page: Page }) {
       </div>
 
       {error && (
-        <p className="w-full rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800 dark:border-red-900/50 dark:bg-red-950/40 dark:text-red-300">
+        <p
+          role="alert"
+          className="w-full rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800 dark:border-red-900/50 dark:bg-red-950/40 dark:text-red-300"
+        >
           {error}
         </p>
       )}

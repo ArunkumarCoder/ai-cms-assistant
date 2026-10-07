@@ -196,9 +196,13 @@ export function GeneratePageForm() {
   if (!draft) {
     return (
       <form onSubmit={handleGenerate} className="mt-8 space-y-4">
+        <h2 className="sr-only">Page brief</h2>
         <div>
-          <label className="block text-sm font-medium">Working title</label>
+          <label htmlFor="brief-title" className="block text-sm font-medium">
+            Working title
+          </label>
           <input
+            id="brief-title"
             required
             value={brief.title}
             onChange={(e) => setBrief({ ...brief, title: e.target.value })}
@@ -206,8 +210,11 @@ export function GeneratePageForm() {
           />
         </div>
         <div>
-          <label className="block text-sm font-medium">Page type</label>
+          <label htmlFor="brief-page-type" className="block text-sm font-medium">
+            Page type
+          </label>
           <select
+            id="brief-page-type"
             value={brief.pageType}
             onChange={(e) => setBrief({ ...brief, pageType: e.target.value as PageType })}
             className={fieldClass}
@@ -220,16 +227,22 @@ export function GeneratePageForm() {
           </select>
         </div>
         <div>
-          <label className="block text-sm font-medium">Target keyword</label>
+          <label htmlFor="brief-target-keyword" className="block text-sm font-medium">
+            Target keyword
+          </label>
           <input
+            id="brief-target-keyword"
             value={brief.targetKeyword}
             onChange={(e) => setBrief({ ...brief, targetKeyword: e.target.value })}
             className={fieldClass}
           />
         </div>
         <div>
-          <label className="block text-sm font-medium">Audience</label>
+          <label htmlFor="brief-audience" className="block text-sm font-medium">
+            Audience
+          </label>
           <input
+            id="brief-audience"
             value={brief.audience}
             onChange={(e) => setBrief({ ...brief, audience: e.target.value })}
             placeholder="Who is this page for?"
@@ -237,8 +250,11 @@ export function GeneratePageForm() {
           />
         </div>
         <div>
-          <label className="block text-sm font-medium">Tone</label>
+          <label htmlFor="brief-tone" className="block text-sm font-medium">
+            Tone
+          </label>
           <input
+            id="brief-tone"
             value={brief.tone}
             onChange={(e) => setBrief({ ...brief, tone: e.target.value })}
             placeholder="e.g. friendly, professional, urgent"
@@ -246,8 +262,11 @@ export function GeneratePageForm() {
           />
         </div>
         <div>
-          <label className="block text-sm font-medium">Key points</label>
+          <label htmlFor="brief-key-points" className="block text-sm font-medium">
+            Key points
+          </label>
           <textarea
+            id="brief-key-points"
             value={brief.keyPoints}
             onChange={(e) => setBrief({ ...brief, keyPoints: e.target.value })}
             rows={4}
@@ -257,7 +276,10 @@ export function GeneratePageForm() {
         </div>
 
         {generateError && (
-          <p className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800 dark:border-red-900/50 dark:bg-red-950/40 dark:text-red-300">
+          <p
+            role="alert"
+            className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800 dark:border-red-900/50 dark:bg-red-950/40 dark:text-red-300"
+          >
             {generateError}
           </p>
         )}
@@ -275,9 +297,10 @@ export function GeneratePageForm() {
 
   return (
     <div className="mt-8 space-y-6">
+      <h2 className="sr-only">Generated draft</h2>
       <div className="flex items-center justify-between gap-4">
         {savedSlug ? (
-          <p className="text-sm text-emerald-700 dark:text-emerald-400">
+          <p role="status" className="text-sm text-emerald-700 dark:text-emerald-400">
             Saved as draft.{" "}
             <Link href={`/pages/${savedSlug}`} className="underline">
               View page
@@ -297,24 +320,33 @@ export function GeneratePageForm() {
 
       <div className="space-y-3">
         <div>
-          <label className="block text-sm font-medium">Title</label>
+          <label htmlFor="draft-title" className="block text-sm font-medium">
+            Title
+          </label>
           <input
+            id="draft-title"
             value={draft.title}
             onChange={(e) => setDraft({ ...draft, title: e.target.value })}
             className={fieldClass}
           />
         </div>
         <div>
-          <label className="block text-sm font-medium">Slug</label>
+          <label htmlFor="draft-slug" className="block text-sm font-medium">
+            Slug
+          </label>
           <input
+            id="draft-slug"
             value={draft.slug}
             onChange={(e) => setDraft({ ...draft, slug: e.target.value })}
             className={fieldClass}
           />
         </div>
         <div>
-          <label className="block text-sm font-medium">Meta description</label>
+          <label htmlFor="draft-meta-description" className="block text-sm font-medium">
+            Meta description
+          </label>
           <textarea
+            id="draft-meta-description"
             value={draft.metaDescription}
             onChange={(e) => setDraft({ ...draft, metaDescription: e.target.value })}
             rows={2}
@@ -322,8 +354,11 @@ export function GeneratePageForm() {
           />
         </div>
         <div>
-          <label className="block text-sm font-medium">Target keyword</label>
+          <label htmlFor="draft-target-keyword" className="block text-sm font-medium">
+            Target keyword
+          </label>
           <input
+            id="draft-target-keyword"
             value={draft.targetKeyword ?? ""}
             onChange={(e) =>
               setDraft({ ...draft, targetKeyword: e.target.value || null })
@@ -350,7 +385,10 @@ export function GeneratePageForm() {
       </div>
 
       {saveError && (
-        <p className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800 dark:border-red-900/50 dark:bg-red-950/40 dark:text-red-300">
+        <p
+          role="alert"
+          className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800 dark:border-red-900/50 dark:bg-red-950/40 dark:text-red-300"
+        >
           {saveError}
         </p>
       )}

@@ -63,13 +63,30 @@ const STATUS_STYLES: Record<SeoCheckStatus, { icon: typeof PassIcon; className: 
   pass: { icon: PassIcon, className: "text-emerald-600 dark:text-emerald-400" },
   warn: { icon: WarnIcon, className: "text-amber-600 dark:text-amber-400" },
   fail: { icon: FailIcon, className: "text-red-600 dark:text-red-400" },
-  "not-applicable": { icon: NotApplicableIcon, className: "text-zinc-400 dark:text-zinc-500" },
+  "not-applicable": { icon: NotApplicableIcon, className: "text-zinc-500 dark:text-zinc-400" },
+};
+
+// Sighted users get pass/warn/fail/not-applicable from the icon's shape, not
+// just its color (WCAG 1.4.1) — but the icon is `aria-hidden`, so without
+// this a screen reader user hears only the check's label/reason and never
+// learns whether it passed or failed.
+const STATUS_LABEL: Record<SeoCheckStatus, string> = {
+  pass: "Pass",
+  warn: "Warning",
+  fail: "Fail",
+  "not-applicable": "Not applicable",
 };
 
 function scoreClassName(score: number): string {
-  if (score >= 80) return "text-emerald-600 dark:text-emerald-400";
-  if (score >= 50) return "text-amber-600 dark:text-amber-400";
+  if (score >= 80) return "text-emerald-700 dark:text-emerald-400";
+  if (score >= 50) return "text-amber-700 dark:text-amber-400";
   return "text-red-600 dark:text-red-400";
+}
+
+function scoreLabel(score: number): string {
+  if (score >= 80) return "Good";
+  if (score >= 50) return "Fair";
+  return "Needs work";
 }
 
 interface Group {
@@ -152,7 +169,7 @@ export function SeoChecklist({
       <div className="flex items-center justify-between">
         <h2 className="font-medium text-zinc-700 dark:text-zinc-300">SEO checks</h2>
         <span className={`text-xs font-medium ${scoreClassName(analysis.score)}`}>
-          Score: {analysis.score}/100
+          Score: {analysis.score}/100 · {scoreLabel(analysis.score)}
         </span>
       </div>
 
@@ -192,7 +209,10 @@ export function SeoChecklist({
                     >
                       <Icon className={`mt-0.5 h-5 w-5 shrink-0 ${className}`} />
                       <div>
-                        <p className="font-medium text-zinc-700 dark:text-zinc-300">{check.label}</p>
+                        <p className="font-medium text-zinc-700 dark:text-zinc-300">
+                          <span className="sr-only">{STATUS_LABEL[check.status]}: </span>
+                          {check.label}
+                        </p>
                         <p className="text-zinc-600 dark:text-zinc-400">{check.reason}</p>
                       </div>
                     </button>
@@ -202,6 +222,9 @@ export function SeoChecklist({
                         <DiffView
                           entries={[computeValueDiff(check.id, currentValue, suggestedValue)]}
                           renderValue={(value) => value}
+                          labelFor={() =>
+                            check.id === "titleLength" ? "suggested title" : "suggested meta description"
+                          }
                           onAccept={() =>
                             check.id === "titleLength"
                               ? onApplyTitle(suggestedValue)

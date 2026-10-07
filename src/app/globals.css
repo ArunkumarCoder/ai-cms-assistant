@@ -24,3 +24,24 @@ body {
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 }
+
+/* Respects `prefers-reduced-motion` globally rather than requiring every
+   component that uses an `animate-*`/`transition-*` Tailwind utility to
+   remember a `motion-reduce:` variant of its own — the skeleton loading
+   screens (`animate-pulse`, 5+ routes) and the batch alt-text queue's
+   in-progress status dots are the main continuous/looping offenders today,
+   but this covers any future one too. Near-instant (0.01ms, not 0ms) rather
+   than fully `none` for transitions specifically, since some libraries use
+   a transition's `transitionend` event to know when to clean up — an
+   instant-but-real transition still fires that event, a `none` transition
+   never does. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

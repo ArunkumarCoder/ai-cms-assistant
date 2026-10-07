@@ -24,6 +24,18 @@ function highlightClass(field: HighlightedField, current: HighlightedField): str
   return field === current ? " ring-2 ring-violet-400" : "";
 }
 
+// `Element.scrollIntoView({ behavior: "smooth" })` isn't consistently
+// downgraded to instant scrolling by every browser's own
+// `prefers-reduced-motion` handling when a script explicitly requests
+// "smooth" — checking this directly, rather than relying only on
+// globals.css's CSS-level override, means a user with that preference set
+// never gets an unrequested scrolling animation from this button regardless
+// of browser behavior.
+function scrollBehavior(): ScrollBehavior {
+  if (typeof window === "undefined") return "smooth";
+  return window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth";
+}
+
 interface SeoPanelProps {
   page: Page;
 }
@@ -91,7 +103,7 @@ export function SeoPanel({ page }: SeoPanelProps) {
 
   function scrollAndFocus(el: HTMLElement | null, field: HighlightedField) {
     if (!el) return;
-    el.scrollIntoView({ behavior: "smooth", block: "center" });
+    el.scrollIntoView({ behavior: scrollBehavior(), block: "center" });
     el.focus();
     flashHighlight(field);
   }
@@ -107,10 +119,16 @@ export function SeoPanel({ page }: SeoPanelProps) {
 
     // headingHierarchy / readability point at body content, which lives
     // outside this component's subtree (rendered by the server component in
-    // page.tsx) — targeted by DOM id rather than a React ref.
+    // page.tsx) — targeted by DOM id rather than a React ref. `contentEl`
+    // needs `tabIndex={-1}` (set on the element itself in page.tsx) for
+    // `.focus()` to work on a plain `<div>` — without moving focus there,
+    // a keyboard/screen-reader user who triggered this from the checklist
+    // would see the page scroll but have no idea where focus actually is,
+    // and get no announcement at all.
     const contentEl = document.getElementById(CONTENT_BLOCKS_ANCHOR_ID);
     if (!contentEl) return;
-    contentEl.scrollIntoView({ behavior: "smooth", block: "start" });
+    contentEl.scrollIntoView({ behavior: scrollBehavior(), block: "start" });
+    contentEl.focus();
     contentEl.classList.add("ring-2", "ring-violet-400", "rounded-lg");
     window.setTimeout(() => {
       contentEl.classList.remove("ring-2", "ring-violet-400", "rounded-lg");
@@ -195,8 +213,11 @@ export function SeoPanel({ page }: SeoPanelProps) {
       <div className="rounded-lg border border-zinc-200 p-4 text-sm dark:border-zinc-800">
         <div className="space-y-3">
           <div>
-            <label className="block text-sm font-medium">Title</label>
+            <label htmlFor="seo-title" className="block text-sm font-medium">
+              Title
+            </label>
             <input
+              id="seo-title"
               ref={titleRef}
               value={title}
               onChange={(e) => {
@@ -207,8 +228,11 @@ export function SeoPanel({ page }: SeoPanelProps) {
             />
           </div>
           <div>
-            <label className="block text-sm font-medium">Meta description</label>
+            <label htmlFor="seo-meta-description" className="block text-sm font-medium">
+              Meta description
+            </label>
             <textarea
+              id="seo-meta-description"
               ref={metaDescriptionRef}
               value={metaDescription}
               onChange={(e) => {
@@ -220,8 +244,11 @@ export function SeoPanel({ page }: SeoPanelProps) {
             />
           </div>
           <div>
-            <label className="block text-sm font-medium">Target keyword</label>
+            <label htmlFor="seo-target-keyword" className="block text-sm font-medium">
+              Target keyword
+            </label>
             <input
+              id="seo-target-keyword"
               ref={targetKeywordRef}
               value={targetKeyword}
               onChange={(e) => {
@@ -246,10 +273,17 @@ export function SeoPanel({ page }: SeoPanelProps) {
           >
             {aiPending ? "Getting suggestions…" : "Get AI suggestions"}
           </button>
-          {saved && <span className="text-xs text-emerald-700 dark:text-emerald-400">Saved.</span>}
+          {saved && (
+            <span role="status" className="text-xs text-emerald-700 dark:text-emerald-400">
+              Saved.
+            </span>
+          )}
         </div>
         {aiError && (
-          <p className="mt-2 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800 dark:border-red-900/50 dark:bg-red-950/40 dark:text-red-300">
+          <p
+            role="alert"
+            className="mt-2 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800 dark:border-red-900/50 dark:bg-red-950/40 dark:text-red-300"
+          >
             {aiError}
           </p>
         )}
@@ -268,7 +302,10 @@ export function SeoPanel({ page }: SeoPanelProps) {
       />
 
       {saveError && (
-        <p className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800 dark:border-red-900/50 dark:bg-red-950/40 dark:text-red-300">
+        <p
+          role="alert"
+          className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800 dark:border-red-900/50 dark:bg-red-950/40 dark:text-red-300"
+        >
           {saveError}
         </p>
       )}

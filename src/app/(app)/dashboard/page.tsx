@@ -188,7 +188,7 @@ export default async function DashboardPage() {
               <p className="text-xs font-medium tracking-wide text-zinc-500 uppercase dark:text-zinc-400">
                 Average quality sub-scores
               </p>
-              <div className="mt-3 grid grid-cols-3 gap-4 text-center">
+              <div className="mt-3 grid grid-cols-1 gap-4 text-center sm:grid-cols-3">
                 <div>
                   <p className="text-xl font-semibold">{result.subScoreAverages.seo}</p>
                   <p className="text-xs text-zinc-500 dark:text-zinc-400">SEO</p>

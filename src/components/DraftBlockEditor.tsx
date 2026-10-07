@@ -69,6 +69,7 @@ export function DraftBlockEditor({
           <DiffView
             entries={[computeValueDiff(block.type, block, suggestion, blocksEqual)]}
             renderValue={(value) => blockPreview(value)}
+            labelFor={() => `regenerated ${block.type} block`}
             onAccept={onAcceptSuggestion}
             onReject={onRejectSuggestion}
           />
@@ -78,6 +79,7 @@ export function DraftBlockEditor({
           {block.type === "heading" && (
             <>
               <select
+                aria-label="Heading level"
                 value={block.level}
                 onChange={(e) =>
                   onChange({ ...block, level: Number(e.target.value) as 2 | 3 | 4 })
@@ -89,6 +91,7 @@ export function DraftBlockEditor({
                 <option value={4}>Heading 4</option>
               </select>
               <textarea
+                aria-label="Heading text"
                 value={block.content}
                 onChange={(e) => onChange({ ...block, content: e.target.value })}
                 rows={2}
@@ -99,6 +102,7 @@ export function DraftBlockEditor({
 
           {block.type === "paragraph" && (
             <textarea
+              aria-label="Paragraph text"
               value={block.content}
               onChange={(e) => onChange({ ...block, content: e.target.value })}
               rows={4}
@@ -109,12 +113,14 @@ export function DraftBlockEditor({
           {block.type === "cta" && (
             <>
               <input
+                aria-label="Button text"
                 value={block.content}
                 onChange={(e) => onChange({ ...block, content: e.target.value })}
                 placeholder="Button text"
                 className={fieldClass}
               />
               <input
+                aria-label="Button link"
                 value={block.href}
                 onChange={(e) => onChange({ ...block, href: e.target.value })}
                 placeholder="Link (e.g. /contact)"
@@ -134,7 +140,7 @@ export function DraftBlockEditor({
       )}
 
       {error && (
-        <p className="mt-2 text-xs text-red-600 dark:text-red-400">{error}</p>
+        <p role="alert" className="mt-2 text-xs text-red-600 dark:text-red-400">{error}</p>
       )}
     </div>
   );

@@ -33,6 +33,12 @@ export function FaqEditor({ page }: { page: Page }) {
   const [savePending, setSavePending] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
+  // A visually-hidden, announced-only message for the one state change here
+  // that has no visible text of its own to announce: new FAQs silently
+  // appending to the list below. Everything else (errors, "Saved.") already
+  // renders real on-screen text, which `role="alert"`/`role="status"` on
+  // those same elements is enough to have announced.
+  const [liveMessage, setLiveMessage] = useState("");
 
   function markDirty() {
     setSaved(false);
@@ -66,6 +72,9 @@ export function FaqEditor({ page }: { page: Page }) {
       })),
     ]);
     markDirty();
+    setLiveMessage(
+      `${result.faqItems.length} FAQ${result.faqItems.length === 1 ? "" : "s"} generated and added below.`,
+    );
   }
 
   function handleQuestionChange(id: string, value: string) {
@@ -122,6 +131,9 @@ export function FaqEditor({ page }: { page: Page }) {
 
   return (
     <section className="mt-12">
+      <p role="status" className="sr-only">
+        {liveMessage}
+      </p>
       <div className="flex items-center justify-between gap-4">
         <h2 className="text-xl font-semibold">FAQs</h2>
         <button
@@ -135,7 +147,10 @@ export function FaqEditor({ page }: { page: Page }) {
       </div>
 
       {generateError && (
-        <p className="mt-3 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800 dark:border-red-900/50 dark:bg-red-950/40 dark:text-red-300">
+        <p
+          role="alert"
+          className="mt-3 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800 dark:border-red-900/50 dark:bg-red-950/40 dark:text-red-300"
+        >
           {generateError}
         </p>
       )}
@@ -188,12 +203,14 @@ export function FaqEditor({ page }: { page: Page }) {
 
               <div className="mt-2 space-y-2">
                 <input
+                  aria-label={`Question ${index + 1}`}
                   value={item.question}
                   onChange={(e) => handleQuestionChange(item.id, e.target.value)}
                   placeholder="Question"
                   className={`${fieldClass} font-medium`}
                 />
                 <textarea
+                  aria-label={`Answer ${index + 1}`}
                   value={item.answer}
                   onChange={(e) => handleAnswerChange(item.id, e.target.value)}
                   placeholder="Answer"
@@ -207,7 +224,10 @@ export function FaqEditor({ page }: { page: Page }) {
       )}
 
       {saveError && (
-        <p className="mt-3 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800 dark:border-red-900/50 dark:bg-red-950/40 dark:text-red-300">
+        <p
+          role="alert"
+          className="mt-3 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800 dark:border-red-900/50 dark:bg-red-950/40 dark:text-red-300"
+        >
           {saveError}
         </p>
       )}
@@ -222,7 +242,9 @@ export function FaqEditor({ page }: { page: Page }) {
           {savePending ? "Saving…" : "Save FAQs"}
         </button>
         {saved && !savePending && (
-          <span className="text-xs text-emerald-700 dark:text-emerald-400">Saved.</span>
+          <span role="status" className="text-xs text-emerald-700 dark:text-emerald-400">
+            Saved.
+          </span>
         )}
       </div>
     </section>

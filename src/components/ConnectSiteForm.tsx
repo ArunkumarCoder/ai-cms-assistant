@@ -16,8 +16,8 @@ export function ConnectSiteForm() {
 
   return (
     <form action={formAction} className="mt-8 space-y-4">
-      <div>
-        <label className="block text-sm font-medium">CMS</label>
+      <fieldset className="m-0 border-0 p-0">
+        <legend className="block text-sm font-medium">CMS</legend>
         <div className="mt-1 flex gap-2">
           {(["sanity", "wordpress"] as const).map((option) => (
             <label
@@ -40,7 +40,7 @@ export function ConnectSiteForm() {
             </label>
           ))}
         </div>
-      </div>
+      </fieldset>
 
       <div>
         <label htmlFor="name" className="block text-sm font-medium">
@@ -196,7 +196,10 @@ export function ConnectSiteForm() {
       </div>
 
       {state?.error && (
-        <p className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800 dark:border-red-900/50 dark:bg-red-950/40 dark:text-red-300">
+        <p
+          role="alert"
+          className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800 dark:border-red-900/50 dark:bg-red-950/40 dark:text-red-300"
+        >
           {state.error}
         </p>
       )}

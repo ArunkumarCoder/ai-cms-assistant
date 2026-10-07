@@ -67,6 +67,7 @@ export function DiffView<T>({ entries, renderValue, labelFor, onAccept, onReject
             <button
               type="button"
               onClick={() => onAccept(entry.id)}
+              aria-label={labelFor ? `Accept ${labelFor(entry)}` : undefined}
               className="rounded-full bg-violet-600 px-3 py-1 text-xs font-medium text-white hover:bg-violet-700"
             >
               Accept
@@ -74,6 +75,7 @@ export function DiffView<T>({ entries, renderValue, labelFor, onAccept, onReject
             <button
               type="button"
               onClick={() => onReject(entry.id)}
+              aria-label={labelFor ? `Reject ${labelFor(entry)}` : undefined}
               className="rounded-full border border-zinc-300 px-3 py-1 text-xs font-medium hover:bg-zinc-50 dark:border-zinc-700 dark:hover:bg-zinc-800"
             >
               Reject

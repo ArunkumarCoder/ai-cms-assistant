@@ -10,26 +10,57 @@ const IMAGE_WIDTH = 1200;
 // inline formatting/links within a paragraph — which the old PortableText
 // renderer supported via Sanity's native marks — can't be rendered here.
 export function ContentBlocks({ blocks }: { blocks: ContentBlock[] }) {
+  const sorted = blocks.slice().sort((a, b) => a.order - b.order);
+  const levelById = normalizeHeadingLevels(sorted);
   return (
     <div>
-      {blocks
-        .slice()
-        .sort((a, b) => a.order - b.order)
-        .map((block) => (
-          <ContentBlockView key={block.id} block={block} />
-        ))}
+      {sorted.map((block) => (
+        <ContentBlockView key={block.id} block={block} headingLevel={levelById.get(block.id)} />
+      ))}
     </div>
   );
 }
 
-function ContentBlockView({ block }: { block: ContentBlock }) {
+// `metadata.level` (2/3/4, see pageDraft.ts's schema) is whatever an AI
+// generation or hand-edit set per block independently — nothing upstream
+// stops two adjacent heading blocks from jumping straight from an h2 to an
+// h4, a real WCAG 1.3.1/2.4.6 heading-order violation if rendered literally.
+// This clamps the *rendered* tag to never jump more than one level deeper
+// than the previous heading actually rendered, without touching the stored
+// data — an author's heading levels are still whatever they chose; only the
+// semantic tag emitted here is corrected. Starts at a baseline of "the
+// surrounding page already has at least an h3" (true on this page's own
+// `/pages/[slug]` route, whose SeoPanel section renders h2/h3 before this
+// component), so a page's very first content heading can be h2, h3, or h4
+// without being treated as a skip relative to chrome that isn't visible to
+// this component.
+function normalizeHeadingLevels(blocks: ContentBlock[]): Map<string, 2 | 3 | 4> {
+  const levelById = new Map<string, 2 | 3 | 4>();
+  let previousLevel = 3;
+  for (const block of blocks) {
+    if (block.type !== "heading") continue;
+    const requested = block.metadata?.level;
+    const normalized = requested === 3 || requested === 4 ? requested : 2;
+    const clamped = Math.min(normalized, previousLevel + 1) as 2 | 3 | 4;
+    levelById.set(block.id, clamped);
+    previousLevel = clamped;
+  }
+  return levelById;
+}
+
+function ContentBlockView({
+  block,
+  headingLevel,
+}: {
+  block: ContentBlock;
+  headingLevel?: 2 | 3 | 4;
+}) {
   switch (block.type) {
     case "heading": {
-      const level = block.metadata?.level;
-      if (level === 3) {
+      if (headingLevel === 3) {
         return <h3 className="mt-6 mb-2 text-xl font-semibold">{block.content}</h3>;
       }
-      if (level === 4) {
+      if (headingLevel === 4) {
         return <h4 className="mt-4 mb-2 text-lg font-semibold">{block.content}</h4>;
       }
       return <h2 className="mt-8 mb-3 text-2xl font-semibold">{block.content}</h2>;
@@ -89,7 +120,7 @@ function ContentBlockView({ block }: { block: ContentBlock }) {
             </figcaption>
           )}
           {altTextStatus !== "reviewed" && (
-            <p className="mt-1 text-xs text-amber-600 dark:text-amber-400">
+            <p className="mt-1 text-xs text-amber-700 dark:text-amber-400">
               Alt text status: {String(altTextStatus)}
             </p>
           )}

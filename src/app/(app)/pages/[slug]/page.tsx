@@ -109,7 +109,12 @@ export default async function PageDetailRoute({
         <SeoPanel page={page} />
       </div>
 
-      <div id="page-content-blocks" className="mt-8">
+      {/* tabIndex={-1}: SeoPanel's checklist "jump to content" clicks call
+          .focus() on this div (it has no native way to receive focus
+          otherwise) so a keyboard/screen-reader user ends up with focus
+          actually inside the section being highlighted, not just a scroll
+          with no indication of where they landed. */}
+      <div id="page-content-blocks" tabIndex={-1} className="mt-8 outline-none">
         {page.contentBlocks.length > 0 ? (
           <ContentBlocks blocks={page.contentBlocks} />
         ) : (

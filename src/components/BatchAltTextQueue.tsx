@@ -15,9 +15,9 @@ const STATUS_TEXT: Record<CardPhase["name"], string> = {
 
 const STATUS_DOT_CLASS: Record<CardPhase["name"], string> = {
   idle: "bg-zinc-300 dark:bg-zinc-600",
-  generating: "bg-amber-500 animate-pulse",
+  generating: "bg-amber-500 animate-pulse motion-reduce:animate-none",
   reviewing: "bg-emerald-500",
-  saving: "bg-emerald-500 animate-pulse",
+  saving: "bg-emerald-500 animate-pulse motion-reduce:animate-none",
   saved: "bg-emerald-600",
   failed: "bg-red-500",
 };
@@ -54,13 +54,13 @@ export function BatchAltTextQueue({
     <section className="rounded-lg border border-zinc-200 p-4 text-sm dark:border-zinc-800">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <p className="font-medium text-zinc-700 dark:text-zinc-300">
+          <p role="status" className="font-medium text-zinc-700 dark:text-zinc-300">
             {running
               ? `Generating alt text — ${processed} of ${progress.total} processed`
               : `Batch finished — ${progress.suggested} awaiting review, ${progress.saved} saved, ${progress.failed} failed of ${progress.total}`}
           </p>
           {progress.failed > 0 && !running && (
-            <p className="mt-0.5 text-xs text-red-700 dark:text-red-400">
+            <p role="alert" className="mt-0.5 text-xs text-red-700 dark:text-red-400">
               {progress.failed} image{progress.failed === 1 ? "" : "s"} failed — retry below, the rest
               are unaffected.
             </p>
@@ -90,9 +90,16 @@ export function BatchAltTextQueue({
         </div>
       </div>
 
-      <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-zinc-100 dark:bg-zinc-800">
+      <div
+        role="progressbar"
+        aria-label="Batch alt text progress"
+        aria-valuemin={0}
+        aria-valuemax={progress.total}
+        aria-valuenow={processed}
+        className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-zinc-100 dark:bg-zinc-800"
+      >
         <div
-          className="h-full rounded-full bg-emerald-500 transition-[width]"
+          className="h-full rounded-full bg-emerald-500 transition-[width] motion-reduce:transition-none"
           style={{ width: `${progress.total === 0 ? 0 : Math.round((processed / progress.total) * 100)}%` }}
         />
       </div>

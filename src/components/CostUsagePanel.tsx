@@ -134,7 +134,7 @@ export function CostUsagePanel({ summary }: { summary: CostUsageSummary }) {
               <span className="w-20 shrink-0 text-right text-zinc-600 dark:text-zinc-400">
                 {formatUsd(day.totalCostUsd)}
               </span>
-              <span className="w-16 shrink-0 text-right text-zinc-400 dark:text-zinc-500">
+              <span className="w-16 shrink-0 text-right text-zinc-500 dark:text-zinc-400">
                 {day.callCount} call{day.callCount === 1 ? "" : "s"}
               </span>
             </div>

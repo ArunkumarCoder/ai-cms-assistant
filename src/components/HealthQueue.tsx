@@ -90,7 +90,11 @@ export function HealthQueue({ pages }: { pages: PageHealthInput[] }) {
           ))}
         </div>
 
+        <label htmlFor="health-queue-sort" className="sr-only">
+          Sort by
+        </label>
         <select
+          id="health-queue-sort"
           value={sort}
           onChange={(e) => setSort(e.target.value as Sort)}
           className="rounded-lg border border-zinc-300 px-2 py-1.5 text-sm dark:border-zinc-700 dark:bg-zinc-900"

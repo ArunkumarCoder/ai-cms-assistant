@@ -55,7 +55,14 @@ export function MediaLibraryCard({
       <div className="relative aspect-video bg-zinc-100 dark:bg-zinc-900">
         <Image
           src={image.url}
-          alt={image.altText ?? ""}
+          // A missing `altText` must NOT become an empty (decorative) `alt`
+          // here specifically — this card's whole purpose is surfacing
+          // images that need a caption, so marking the image itself
+          // decorative would hide it from the exact screen-reader users this
+          // tool exists to help. The status badge below already says
+          // "Missing" in text; this makes that same fact reachable from the
+          // image itself, not just from a sibling element.
+          alt={image.altText ?? "Image with no alt text set yet"}
           fill
           sizes="(min-width: 1024px) 33vw, (min-width: 640px) 50vw, 100vw"
           className="object-cover"
@@ -71,7 +78,7 @@ export function MediaLibraryCard({
           {image.altText ? (
             `"${image.altText}"`
           ) : (
-            <span className="italic text-zinc-400 dark:text-zinc-500">No alt text</span>
+            <span className="italic text-zinc-500 dark:text-zinc-400">No alt text</span>
           )}
         </p>
         {assessment.flagged && !isReviewing && (
@@ -90,10 +97,11 @@ export function MediaLibraryCard({
 
         {isReviewing && (
           <div className="mt-2 space-y-2 rounded-lg border border-violet-200 bg-violet-50 p-2 dark:border-violet-900/50 dark:bg-violet-950/40">
-            <p className="text-xs font-medium text-violet-800 dark:text-violet-300">
+            <p id={`alt-suggestion-label-${image.id}`} className="text-xs font-medium text-violet-800 dark:text-violet-300">
               AI suggestion — review or edit before saving
             </p>
             <textarea
+              aria-labelledby={`alt-suggestion-label-${image.id}`}
               value={phase.draft}
               onChange={(e) => onDraftChange(e.target.value)}
               disabled={phase.name === "saving"}
@@ -107,7 +115,7 @@ export function MediaLibraryCard({
               </p>
             )}
             {phase.name === "reviewing" && phase.error && (
-              <p className="text-xs text-red-700 dark:text-red-400">{phase.error}</p>
+              <p role="alert" className="text-xs text-red-700 dark:text-red-400">{phase.error}</p>
             )}
             <div className="flex items-center gap-2">
               <button
@@ -142,7 +150,7 @@ export function MediaLibraryCard({
         )}
 
         {phase.name === "failed" && (
-          <p className="text-xs text-red-700 dark:text-red-400">{phase.message}</p>
+          <p role="alert" className="text-xs text-red-700 dark:text-red-400">{phase.message}</p>
         )}
       </div>
     </li>

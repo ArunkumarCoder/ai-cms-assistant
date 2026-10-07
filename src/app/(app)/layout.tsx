@@ -15,13 +15,13 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
   return (
     <div className="flex flex-1">
       <Sidebar />
-      <div className="flex flex-1 flex-col">
+      <div className="flex min-w-0 flex-1 flex-col">
         <TopBar
           userEmail={user.email ?? ""}
           sites={sites.map((site) => ({ id: site.id, name: site.name }))}
           activeSiteId={activeSite?.id ?? null}
         />
-        <main className="flex-1">{children}</main>
+        <main className="min-w-0 flex-1">{children}</main>
       </div>
     </div>
   );

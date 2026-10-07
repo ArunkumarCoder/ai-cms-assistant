@@ -1,9 +1,18 @@
 import type { QualityScore } from "@/lib/quality";
 
 function scoreClassName(score: number): string {
-  if (score >= 80) return "text-emerald-600 dark:text-emerald-400";
-  if (score >= 50) return "text-amber-600 dark:text-amber-400";
+  if (score >= 80) return "text-emerald-700 dark:text-emerald-400";
+  if (score >= 50) return "text-amber-700 dark:text-amber-400";
   return "text-red-600 dark:text-red-400";
+}
+
+// A visible word alongside the color, not just a color-coded number — a
+// colorblind user reading "72/100" in amber vs. emerald still can't place it
+// as okay-but-improvable vs. good from the number and color alone.
+function scoreLabel(score: number): string {
+  if (score >= 80) return "Good";
+  if (score >= 50) return "Fair";
+  return "Needs work";
 }
 
 function scoreBarClassName(score: number): string {
@@ -32,9 +41,14 @@ export function QualityScorePanel({ quality }: QualityScorePanelProps) {
     <section className="rounded-lg border border-zinc-200 p-4 text-sm dark:border-zinc-800">
       <div className="flex items-center justify-between">
         <h2 className="font-medium text-zinc-700 dark:text-zinc-300">Quality score</h2>
-        <span className={`text-2xl font-semibold ${scoreClassName(quality.score)}`}>
-          {quality.score}
-          <span className="text-sm font-normal text-zinc-400">/100</span>
+        <span className="flex items-baseline gap-2">
+          <span className={`text-2xl font-semibold ${scoreClassName(quality.score)}`}>
+            {quality.score}
+            <span className="text-sm font-normal text-zinc-500 dark:text-zinc-400">/100</span>
+          </span>
+          <span className={`text-xs font-medium ${scoreClassName(quality.score)}`}>
+            {scoreLabel(quality.score)}
+          </span>
         </span>
       </div>
 
@@ -46,7 +60,7 @@ export function QualityScorePanel({ quality }: QualityScorePanelProps) {
               <div className="flex items-center justify-between gap-4">
                 <span className="font-medium text-zinc-700 dark:text-zinc-300">{label}</span>
                 <span className={`shrink-0 text-xs font-medium ${scoreClassName(sub.score)}`}>
-                  {sub.score}/100
+                  {sub.score}/100 · {scoreLabel(sub.score)}
                 </span>
               </div>
               <div className="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-zinc-100 dark:bg-zinc-800">

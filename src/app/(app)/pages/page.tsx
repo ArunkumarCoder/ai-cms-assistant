@@ -38,7 +38,7 @@ export default async function PagesIndex() {
 
   return (
     <div className="mx-auto w-full max-w-3xl px-6 py-16">
-      <div className="flex items-start justify-between gap-4">
+      <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <h1 className="text-3xl font-semibold tracking-tight">Pages</h1>
           <p className="mt-2 text-zinc-600 dark:text-zinc-400">
@@ -72,10 +72,10 @@ export default async function PagesIndex() {
             <li key={page.id} className="py-5">
               <Link
                 href={`/pages/${page.slug}`}
-                className="flex items-start justify-between gap-4 hover:opacity-80"
+                className="flex flex-wrap items-start justify-between gap-4 hover:opacity-80"
               >
-                <div>
-                  <h2 className="text-lg font-medium">{page.title}</h2>
+                <div className="min-w-0">
+                  <h2 className="truncate text-lg font-medium">{page.title}</h2>
                   <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
                     {page.pageType}
                     {page.targetKeyword

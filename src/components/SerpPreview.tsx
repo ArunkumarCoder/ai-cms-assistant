@@ -33,14 +33,14 @@ export function SerpPreview({ title, metaDescription, slug }: SerpPreviewProps) 
           {truncateAtWord(trimmedTitle, TITLE_MAX)}
         </p>
       ) : (
-        <p className="mt-1 text-xl italic text-zinc-400">(no title set)</p>
+        <p className="mt-1 text-xl italic text-zinc-500">(no title set)</p>
       )}
       {trimmedDescription ? (
         <p className="mt-1 text-sm text-zinc-600">
           {truncateAtWord(trimmedDescription, DESCRIPTION_MAX)}
         </p>
       ) : (
-        <p className="mt-1 text-sm italic text-zinc-400">(no meta description set)</p>
+        <p className="mt-1 text-sm italic text-zinc-500">(no meta description set)</p>
       )}
     </div>
   );

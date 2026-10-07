@@ -63,6 +63,7 @@ See [SPEC.md §22–25](./SPEC.md) for the full content-model mapping (Gutenberg
 - `npm run format:check` — Prettier, check only (CI-friendly)
 - `npm test` — the full Vitest suite (unit tests, the shared CmsAdapter contract suite, AI schema/validation tests — everything under `src/**/*.test.ts`, one command)
 - `npm run test:coverage` — the same suite with a coverage report (text + HTML in `coverage/`, gitignored)
+- `npm run test:a11y` — the Playwright + axe-core accessibility audit (see [Accessibility](#accessibility) below)
 
 ## Testing
 
@@ -79,6 +80,18 @@ Everything runs through one command, `npm test` — there's no separate suite to
 | `lib/cms/` | 83.9% | 75.5% | 94.5% | 85.9% |
 
 Not chasing 100% — the real gaps are specific and known rather than hidden: `lib/ai/providers/registry.ts` (14%) only picks which already-well-tested provider class to construct from an API key in `process.env`, which isn't meaningfully testable without either a real key or mocking three SDK constructors for little value; each provider's own `getDefaultClient()` (the "construct the real SDK client" branch, as opposed to the injected-mock-client branch every other test uses) is similarly wiring, not logic. Run `npm run test:coverage` and open `coverage/index.html` for the full per-file breakdown.
+
+## Accessibility
+
+Day 33's pass covered keyboard operability, screen reader labeling/live regions, color contrast, responsive layout, and `prefers-reduced-motion`, targeting WCAG 2.1 A/AA throughout. The manual work is the real coverage — an automated scan only catches what's mechanically detectable:
+
+- **Keyboard**: every interactive element is reachable and operable with Enter/Space, with a visible focus state. The app shell's sidebar collapses into a slide-in drawer below the `sm` breakpoint (`src/components/Sidebar.tsx`), with a hamburger toggle, Escape-to-close, click-outside-to-close, and auto-close on navigation. The FAQ editor's reordering already had discoverable Up/Down buttons (`aria-label`ed) as its only mechanism — there's no drag-and-drop in this codebase to retrofit.
+- **Screen reader**: every form field has a real `<label htmlFor>` (or `aria-label` for icon-only/compact controls); async errors use `role="alert"`, async success/status text uses `role="status"`; the batch alt-text queue's progress bar is a real `role="progressbar"`. The SEO checklist's pass/warn/fail/not-applicable icons carry a visually-hidden status word, since the icon shape itself is `aria-hidden`. `DiffView`'s Accept/Reject buttons get a field-specific `aria-label` so they're distinguishable out of context. AI-authored heading blocks are normalized (`ContentBlocks.tsx`) so a page can never render a skipped heading level, regardless of what level an AI generation returned.
+- **Color and contrast**: every text/background pair in both themes was checked against the WCAG AA ratios (4.5:1 normal text, 3:1 large text/non-text UI) — this caught several real failures hiding in plain sight: `zinc-400` body text on white (2.56:1), `amber-600`/`emerald-600` score text on white (3.19:1 / 3.77:1), and two places where the light/dark color pairing was accidentally reversed (lighter shade in light mode, darker in dark mode). The SEO checklist's pass/fail states and the quality score's color-coding now also carry a text label or icon, not color alone.
+- **Responsive**: checked at phone/tablet/desktop widths. The dashboard's sub-score grid, and the Sites/Pages list rows, now stack instead of crowding or overflowing on a narrow screen; the SERP preview already had no fixed widths.
+- **Reduced motion**: a global CSS override (`src/app/globals.css`) plus Tailwind's `motion-reduce:` variant on every `animate-*`/`transition-*` usage, plus a JS-level `prefers-reduced-motion` check before any explicit `scrollIntoView({ behavior: "smooth" })` call.
+
+**Automated audit** — `npm run test:a11y` runs axe-core (via `@axe-core/playwright`) against a real running instance (`playwright.config.ts` starts `next dev` itself), scoped to WCAG 2.0/2.1 A+AA rules. `e2e/global-setup.ts` seeds one fixed test account so the suite can log in and audit authenticated screens, not just `/login`/`/signup`. As of this pass: **0 violations** on every screen the suite reaches — `/login`, `/signup`, `/sites` (app shell + empty state), `/sites/connect`. Four more specs (pages list, page editor, Media Library, dashboard) exist in `e2e/a11y.spec.ts` but auto-skip unless `.env.local` has real `SANITY_API_TOKEN`/`NEXT_PUBLIC_SANITY_PROJECT_ID`/`NEXT_PUBLIC_SANITY_DATASET` set, since there's no fixture CMS to connect to otherwise — those four screens were still covered by the manual keyboard/screen-reader/contrast passes above, just not by this automated run.
 
 ## Project structure
 

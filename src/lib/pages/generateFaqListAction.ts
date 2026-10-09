@@ -24,6 +24,10 @@ export type GenerateFaqListResult = { faqItems: FaqItemDraft[] } | { error: stri
 
 export async function generateFaqListAction(
   input: GenerateFaqListInput,
+  // The caller's "Regenerate" affordance (FaqEditor.tsx) — see the matching
+  // comment on generateSeoSuggestionsAction.ts; "faq-generation" is the other
+  // cacheable call type with a user-facing "try again" button.
+  options: { bypassCache?: boolean } = {},
 ): Promise<GenerateFaqListResult> {
   const user = await requireUser();
   // No connected Site (or one with no brand voice set) just means the
@@ -53,7 +57,7 @@ export async function generateFaqListAction(
       "faq-generation",
       prompt,
       faqListSchema,
-      { context: { userId: user.id, siteId: site?.id } },
+      { context: { userId: user.id, siteId: site?.id }, bypassCache: options.bypassCache },
     );
     return { faqItems: result.data.faqItems };
   } catch (err) {

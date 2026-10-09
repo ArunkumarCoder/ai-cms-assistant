@@ -15,6 +15,12 @@ export type GenerateSeoSuggestionsResult = { suggestions: SeoSuggestions } | { e
 
 export async function generateSeoSuggestionsAction(
   input: GenerateSeoSuggestionsInput,
+  // The caller's "Regenerate" affordance (SeoPanel.tsx) — "seo-scoring" is a
+  // cacheable call type (src/lib/ai/cache.ts), so an unchanged title/meta/
+  // keyword would otherwise silently replay the same suggestion on every
+  // click, which looks like a broken button. Defaults to a fresh cache read,
+  // same as before this existed.
+  options: { bypassCache?: boolean } = {},
 ): Promise<GenerateSeoSuggestionsResult> {
   const user = await requireUser();
   const site = await getActiveSiteForCurrentUser();
@@ -28,7 +34,7 @@ export async function generateSeoSuggestionsAction(
       "seo-scoring",
       prompt,
       seoSuggestionsSchema,
-      { context: { userId: user.id, siteId: site?.id } },
+      { context: { userId: user.id, siteId: site?.id }, bypassCache: options.bypassCache },
     );
     return { suggestions: result.data };
   } catch (err) {

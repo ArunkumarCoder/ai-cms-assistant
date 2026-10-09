@@ -4,7 +4,16 @@ import { useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { Page } from "@/types";
 import { analyzeSeoContent, type SeoCheckResult } from "@/lib/seo";
-import { computeQualityScore } from "@/lib/quality";
+// Imported from the concrete module, not the "@/lib/quality" barrel — that
+// barrel also re-exports `withQualityScoring`/`getLatestScoresForSite`
+// (autoScore.ts/scoreHistory.ts), both of which import `@/lib/db`'s Prisma
+// client at module scope. Turbopack can't tree-shake that away (a
+// `new PrismaClient()` module-scope side effect blocks it), so importing the
+// barrel from this Client Component was shipping Prisma's error-class code
+// to the browser for nothing — a real, measured leak (Day 34 bundle audit),
+// not a hypothetical one. QualityScorePanel.tsx's `import type` from the
+// barrel is unaffected — type-only imports are erased before this matters.
+import { computeQualityScore } from "@/lib/quality/score";
 import type { SeoSuggestions } from "@/lib/ai";
 import { generateSeoSuggestionsAction } from "@/lib/pages/generateSeoSuggestionsAction";
 import { saveDraftPageAction } from "@/lib/pages/saveDraftPageAction";
@@ -138,13 +147,20 @@ export function SeoPanel({ page }: SeoPanelProps) {
   async function handleGetSuggestions() {
     setAiError(null);
     setAiPending(true);
-    const result = await generateSeoSuggestionsAction({
-      title,
-      metaDescription,
-      targetKeyword: targetKeyword || undefined,
-      pageType: page.pageType,
-      contentBlocks: page.contentBlocks,
-    });
+    const result = await generateSeoSuggestionsAction(
+      {
+        title,
+        metaDescription,
+        targetKeyword: targetKeyword || undefined,
+        pageType: page.pageType,
+        contentBlocks: page.contentBlocks,
+      },
+      // "seo-scoring" is cached (src/lib/ai/cache.ts) on title/meta/keyword/
+      // content — once a suggestion already exists, clicking this again is a
+      // deliberate "Regenerate," not a first look, so it should never just
+      // silently replay the same cached answer.
+      { bypassCache: suggestions !== null },
+    );
     setAiPending(false);
 
     if ("error" in result) {
@@ -271,7 +287,7 @@ export function SeoPanel({ page }: SeoPanelProps) {
             disabled={aiPending}
             className="rounded-full border border-violet-300 px-4 py-2 text-xs font-medium text-violet-700 disabled:opacity-60 dark:border-violet-800 dark:text-violet-300"
           >
-            {aiPending ? "Getting suggestions…" : "Get AI suggestions"}
+            {aiPending ? "Getting suggestions…" : suggestions !== null ? "Regenerate suggestions" : "Get AI suggestions"}
           </button>
           {saved && (
             <span role="status" className="text-xs text-emerald-700 dark:text-emerald-400">

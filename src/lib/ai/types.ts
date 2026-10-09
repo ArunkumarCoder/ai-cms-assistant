@@ -42,6 +42,14 @@ export interface GenerateOptions {
   // ./client.ts for real, threading these through is what lets the Phase 5
   // cost dashboard break spend down per client site, not just per call type.
   context?: { siteId?: string; userId?: string };
+  // Skips ./cache.ts's lookup for this one call (the call still populates the
+  // cache with its fresh result afterward, so the *next* call benefits
+  // again). For the one explicit "Regenerate"/"try again with the same
+  // input" affordance a cacheable call type gets — without this, that button
+  // would silently replay the same cached answer and look broken. Has no
+  // effect on call types ./cache.ts never caches in the first place
+  // (page-generation, block-regeneration).
+  bypassCache?: boolean;
 }
 
 export interface TokenUsage {

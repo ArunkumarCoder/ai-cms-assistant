@@ -2,13 +2,28 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import dynamic from "next/dynamic";
 import type { AltTextAssessment, CardPhase } from "@/lib/images";
 import { IDLE_PHASE, runWithConcurrency, selectByPhase, selectEligibleForBatch } from "@/lib/images";
 import { generateAltTextAction } from "@/lib/images/generateAltTextAction";
 import { saveAltTextAction } from "@/lib/images/saveAltTextAction";
 import type { ImageAsset } from "@/types";
 import { MediaLibraryCard } from "./MediaLibraryCard";
-import { BatchAltTextQueue } from "./BatchAltTextQueue";
+
+// Only mounted once a batch is actually running (`batchIds` starts `null`) —
+// everyone just browsing the grid, which is most visits, never needs this
+// chunk at all.
+const BatchAltTextQueue = dynamic(() => import("./BatchAltTextQueue").then((mod) => mod.BatchAltTextQueue), {
+  loading: () => (
+    <div
+      role="status"
+      aria-busy="true"
+      className="h-32 animate-pulse rounded-lg border border-zinc-200 bg-zinc-100 dark:border-zinc-800 dark:bg-zinc-900"
+    >
+      <span className="sr-only">Loading batch progress…</span>
+    </div>
+  ),
+});
 
 export interface MediaLibraryItem {
   image: ImageAsset;

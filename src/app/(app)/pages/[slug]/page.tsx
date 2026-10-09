@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { ContentBlocks } from "@/components/ContentBlocks";
-import { FaqEditor } from "@/components/FaqEditor";
+import { FaqEditorLazy } from "@/components/FaqEditorLazy";
 import { SeoPanel } from "@/components/SeoPanel";
 import { PageStatusPanel } from "@/components/PageStatusPanel";
 import { PageHistoryPanel } from "@/components/PageHistoryPanel";
@@ -124,7 +124,7 @@ export default async function PageDetailRoute({
         )}
       </div>
 
-      <FaqEditor page={page} />
+      <FaqEditorLazy page={page} />
 
       <section className="mt-12">
         <h2 className="text-xl font-semibold">History</h2>

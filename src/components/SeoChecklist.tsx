@@ -1,7 +1,31 @@
+import type { ComponentType } from "react";
+import dynamic from "next/dynamic";
 import type { SeoAnalysis, SeoCheckCategory, SeoCheckResult, SeoCheckStatus } from "@/lib/seo";
 import type { SeoSuggestions } from "@/lib/ai";
 import { computeValueDiff } from "@/lib/diff";
-import { DiffView } from "./DiffView";
+import type { DiffViewProps } from "./DiffView";
+
+// Only rendered once an AI suggestion actually differs from the current
+// value — most checklist views (no suggestions fetched yet, or every
+// suggestion already applied/dismissed) never mount this at all. DiffView is
+// generic; `dynamic()` needs one concrete instantiation to type against,
+// and every entry this file ever hands it is a plain string diff (title or
+// meta description), so `DiffViewProps<string>` is the one that's actually
+// true here.
+const DiffView = dynamic<DiffViewProps<string>>(
+  () => import("./DiffView").then((mod) => mod.DiffView as ComponentType<DiffViewProps<string>>),
+  {
+    loading: () => (
+      <div
+        role="status"
+        aria-busy="true"
+        className="h-24 animate-pulse rounded-lg border border-violet-200 bg-violet-50 dark:border-violet-900/50 dark:bg-violet-950/30"
+      >
+        <span className="sr-only">Loading suggestion…</span>
+      </div>
+    ),
+  },
+);
 
 function PassIcon({ className }: { className?: string }) {
   return (

@@ -93,6 +93,15 @@ Day 33's pass covered keyboard operability, screen reader labeling/live regions,
 
 **Automated audit** — `npm run test:a11y` runs axe-core (via `@axe-core/playwright`) against a real running instance (`playwright.config.ts` starts `next dev` itself), scoped to WCAG 2.0/2.1 A+AA rules. `e2e/global-setup.ts` seeds one fixed test account so the suite can log in and audit authenticated screens, not just `/login`/`/signup`. As of this pass: **0 violations** on every screen the suite reaches — `/login`, `/signup`, `/sites` (app shell + empty state), `/sites/connect`. Four more specs (pages list, page editor, Media Library, dashboard) exist in `e2e/a11y.spec.ts` but auto-skip unless `.env.local` has real `SANITY_API_TOKEN`/`NEXT_PUBLIC_SANITY_PROJECT_ID`/`NEXT_PUBLIC_SANITY_DATASET` set, since there's no fixture CMS to connect to otherwise — those four screens were still covered by the manual keyboard/screen-reader/contrast passes above, just not by this automated run.
 
+## Performance
+
+Day 34 covered bundle size, lazy-loading, and caching repeated AI calls. Full write-up (baseline numbers, exact chunk sizes, and the bug this pass found) is SPEC.md §30 — this is the short version.
+
+- **Lazy-loaded**: `DraftBlockEditor` (`GeneratePageForm`), `BatchAltTextQueue` (`MediaLibrary`), `DiffView` (`SeoChecklist` + `DraftBlockEditor`), and `FaqEditor` (page editor, via a small `FaqEditorLazy` client wrapper — `page.tsx` is a Server Component, and a Server Component dynamically importing a Client Component doesn't code-split at all). Each only loads once it's actually shown, with a `role="status" aria-busy="true"` fallback sized to avoid layout shift.
+- **The real find**: `SeoPanel.tsx` was importing `computeQualityScore` from the `@/lib/quality` *barrel*, which also re-exports two Prisma-touching, server-only functions — shipping Prisma's client-error code to the browser for nothing. Fixed by importing from `@/lib/quality/score` directly. Shrank the `/pages/[slug]` route's shared client bundle by ~24% (172KB → 131KB), dwarfing the lazy-loading wins above.
+- **AI response cache** (`src/lib/ai/cache.ts`): an in-memory TTL (15 min) + LRU (200 entries) cache with in-flight de-duplication, keyed by call type + user + site + a hash of the prompt/image/schema — never shared across users or Sites. Only caches the four deterministic-style call types (`seo-scoring`, `faq-generation`, `alt-text-single`, `content-quality`); page/block generation are never cached, since users expect a genuinely new result each time. A cache hit skips the rate limiter, the provider call, and the cost-log entirely (no `$0` row inflating the Cost & Usage dashboard's call count). The SEO suggestions and FAQ "Generate" buttons relabel to "Regenerate" and pass `bypassCache: true` once a result already exists, so clicking again never silently replays a stale answer.
+- **Per-server-instance only**: the cache is plain in-memory, not Redis or any shared store. It resets on every deploy and isn't shared across server instances — an accepted tradeoff for what this needs (avoid duplicate calls within one running process), not a bug.
+
 ## Project structure
 
 ```

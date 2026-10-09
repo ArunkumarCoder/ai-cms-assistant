@@ -6,6 +6,7 @@ import { estimateCostUsd } from "./pricing";
 import { logAiCall } from "./logging";
 import { waitForRateLimitSlot } from "./rateLimit";
 import { AiValidationError, appendValidationFeedback } from "./validation";
+import { aiResponseCache, buildAiCacheKey, isCacheableCallType } from "./cache";
 import type {
   AiCallType,
   AiProviderName,
@@ -65,7 +66,7 @@ export const aiClient = {
     schema: z.ZodType<T>,
     options?: GenerateOptions,
   ): Promise<AiStructuredResult<T>> =>
-    runValidated(callType, prompt, schema, options, (provider, p, jsonSchema) =>
+    runValidatedWithCache(callType, prompt, schema, options, undefined, (provider, p, jsonSchema) =>
       provider.generateStructured<unknown>(p, jsonSchema, options),
     ),
 
@@ -76,7 +77,7 @@ export const aiClient = {
     schema: z.ZodType<T>,
     options?: GenerateOptions,
   ): Promise<AiStructuredResult<T>> =>
-    runValidated(callType, prompt, schema, options, (provider, p, jsonSchema) =>
+    runValidatedWithCache(callType, prompt, schema, options, imageUrl, (provider, p, jsonSchema) =>
       provider.generateWithVision<unknown>(p, imageUrl, jsonSchema, options),
     ),
 };
@@ -141,6 +142,54 @@ async function runLogged<T extends AiTextResult | AiStructuredResult<unknown>>(
   }
 }
 
+type StructuredCallFn = (
+  provider: AiProvider,
+  prompt: string,
+  jsonSchema: JsonSchema,
+) => Promise<AiStructuredResult<unknown>>;
+
+// The cache sits *above* runValidated, not inside it: a cache hit returns
+// before runLogged ever runs, so it skips the rate limiter, the provider
+// call, and the cost-log row entirely — not just the network request. Only
+// runValidated's own eventual *success* is ever handed to `aiResponseCache`
+// (see cache.ts's `wrap`), so an exhausted-retries/non-validation failure is
+// never cached — the next call always tries fresh rather than replaying a
+// stored error.
+async function runValidatedWithCache<T>(
+  callType: AiCallType,
+  initialPrompt: string,
+  schema: z.ZodType<T>,
+  options: GenerateOptions | undefined,
+  imageUrl: string | undefined,
+  call: StructuredCallFn,
+): Promise<AiStructuredResult<T>> {
+  const jsonSchema = z.toJSONSchema(schema);
+
+  if (!isCacheableCallType(callType)) {
+    return runValidated(callType, initialPrompt, schema, jsonSchema, options, call);
+  }
+
+  const key = buildAiCacheKey({
+    callType,
+    userId: options?.context?.userId,
+    siteId: options?.context?.siteId,
+    prompt: initialPrompt,
+    imageUrl,
+    jsonSchema,
+  });
+
+  if (options?.bypassCache) {
+    // Skips the *read* only — the "Regenerate" affordance means "don't serve
+    // me the stale answer," not "stop caching this input forever." Storing
+    // the fresh result keeps the next (non-bypassing) call benefiting again.
+    const result = await runValidated(callType, initialPrompt, schema, jsonSchema, options, call);
+    aiResponseCache.set(key, result);
+    return result;
+  }
+
+  return aiResponseCache.wrap(key, () => runValidated(callType, initialPrompt, schema, jsonSchema, options, call));
+}
+
 // Wraps runLogged with schema validation plus the bounded, feedback-driven
 // retry described at MAX_VALIDATION_ATTEMPTS above. Validation happens
 // *inside* the function passed to runLogged, not after it returns — so a
@@ -154,14 +203,10 @@ async function runValidated<T>(
   callType: AiCallType,
   initialPrompt: string,
   schema: z.ZodType<T>,
+  jsonSchema: JsonSchema,
   options: GenerateOptions | undefined,
-  call: (
-    provider: AiProvider,
-    prompt: string,
-    jsonSchema: JsonSchema,
-  ) => Promise<AiStructuredResult<unknown>>,
+  call: StructuredCallFn,
 ): Promise<AiStructuredResult<T>> {
-  const jsonSchema = z.toJSONSchema(schema);
   let prompt = initialPrompt;
 
   for (let attempt = 1; attempt <= MAX_VALIDATION_ATTEMPTS; attempt++) {

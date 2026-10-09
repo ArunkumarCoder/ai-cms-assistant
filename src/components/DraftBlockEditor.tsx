@@ -1,8 +1,30 @@
 "use client";
 
+import type { ComponentType } from "react";
+import dynamic from "next/dynamic";
 import type { PageDraftBlock } from "@/lib/ai/schemas/pageDraft";
 import { computeValueDiff } from "@/lib/diff";
-import { DiffView } from "./DiffView";
+import type { DiffViewProps } from "./DiffView";
+
+// Only rendered while a regenerated block is awaiting accept/reject — most
+// blocks, most of the time, never trigger this chunk at all. See
+// SeoChecklist.tsx for why `dynamic()` needs an explicit instantiation for
+// DiffView's generic — here every entry is a `PageDraftBlock` diff, not a
+// string one.
+const DiffView = dynamic<DiffViewProps<PageDraftBlock>>(
+  () => import("./DiffView").then((mod) => mod.DiffView as ComponentType<DiffViewProps<PageDraftBlock>>),
+  {
+    loading: () => (
+      <div
+        role="status"
+        aria-busy="true"
+        className="h-24 animate-pulse rounded-lg border border-violet-200 bg-violet-50 dark:border-violet-900/50 dark:bg-violet-950/30"
+      >
+        <span className="sr-only">Loading suggestion…</span>
+      </div>
+    ),
+  },
+);
 
 const fieldClass =
   "mt-1 w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-900";

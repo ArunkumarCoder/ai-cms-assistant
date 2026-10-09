@@ -3,7 +3,7 @@
 import type { ReactNode } from "react";
 import type { DiffEntry } from "@/lib/diff";
 
-interface DiffViewProps<T> {
+export interface DiffViewProps<T> {
   // Callers pass only entries still awaiting a decision — this component has
   // no internal accept/reject bookkeeping of its own. Once a caller decides
   // an entry (via onAccept/onReject), it drops out of the next `entries` it

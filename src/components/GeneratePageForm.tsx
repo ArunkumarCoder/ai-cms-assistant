@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
+import dynamic from "next/dynamic";
 import type { ContentBlock, PageType } from "@/types";
 import type { PageDraftBlock } from "@/lib/ai/schemas/pageDraft";
 import type { PageBrief } from "@/lib/pages/prompt";
@@ -9,7 +10,23 @@ import { generatePageDraftAction } from "@/lib/pages/generatePageDraftAction";
 import { saveDraftPageAction } from "@/lib/pages/saveDraftPageAction";
 import { regenerateBlockAction } from "@/lib/pages/regenerateBlockAction";
 import { draftBlockToContentBlock } from "@/lib/pages/mapping";
-import { DraftBlockEditor } from "./DraftBlockEditor";
+
+// Only ever rendered after a successful "Generate draft" call — nobody who
+// hasn't already waited on that AI round-trip is waiting on this chunk, so
+// splitting it out of the initial /pages/new bundle costs nothing on the
+// path that matters (typing a brief) and pays for itself for everyone who
+// never clicks Generate at all.
+const DraftBlockEditor = dynamic(() => import("./DraftBlockEditor").then((mod) => mod.DraftBlockEditor), {
+  loading: () => (
+    <div
+      role="status"
+      aria-busy="true"
+      className="h-40 animate-pulse rounded-lg border border-zinc-200 bg-zinc-100 dark:border-zinc-800 dark:bg-zinc-900"
+    >
+      <span className="sr-only">Loading block editor…</span>
+    </div>
+  ),
+});
 
 const fieldClass =
   "mt-1 w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-900";

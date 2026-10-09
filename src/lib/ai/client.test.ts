@@ -17,6 +17,7 @@ vi.mock("./rateLimit", () => ({
 
 const { aiClient } = await import("./client");
 const { AiValidationError } = await import("./validation");
+const { aiResponseCache } = await import("./cache");
 
 function fakeTextResult(overrides: Record<string, unknown> = {}) {
   return {
@@ -32,6 +33,12 @@ beforeEach(() => {
   getProviderMock.mockReset();
   logAiCallMock.mockClear();
   waitForRateLimitSlotMock.mockClear();
+  // seo-scoring/alt-text-single are cacheable call types (./cache.ts) — most
+  // of these tests reuse the same prompt/schema across `it` blocks on
+  // purpose, so without this a later test could get served a cache hit from
+  // an earlier one instead of actually exercising the provider/retry/fallback
+  // path it means to test. The dedicated cache.test.ts covers caching itself.
+  aiResponseCache.clear();
 });
 
 describe("aiClient.generate", () => {
@@ -263,6 +270,133 @@ describe("aiClient.generateWithVision", () => {
     for (const call of generateWithVision.mock.calls) {
       expect(call[1]).toBe("https://example.com/a.jpg");
     }
+  });
+});
+
+describe("aiClient AI response caching", () => {
+  it("a second identical generateStructured call makes zero provider calls and logs no spend", async () => {
+    const generateStructured = vi.fn().mockResolvedValue(structuredResult({ score: 88 }));
+    getProviderMock.mockReturnValue({ name: "groq", generateStructured });
+
+    const first = await aiClient.generateStructured("seo-scoring", "Cache me.", scoreSchema);
+    logAiCallMock.mockClear();
+    const second = await aiClient.generateStructured("seo-scoring", "Cache me.", scoreSchema);
+
+    expect(second.data).toEqual(first.data);
+    expect(generateStructured).toHaveBeenCalledTimes(1);
+    expect(getProviderMock).toHaveBeenCalledTimes(1);
+    expect(waitForRateLimitSlotMock).toHaveBeenCalledTimes(1);
+    expect(logAiCallMock).not.toHaveBeenCalled();
+  });
+
+  it("a second identical generateWithVision call is also a cache hit", async () => {
+    const generateWithVision = vi.fn().mockResolvedValue(structuredResult({ score: 5 }, { provider: "openai" }));
+    getProviderMock.mockReturnValue({ name: "openai", generateWithVision });
+
+    await aiClient.generateWithVision("alt-text-single", "Describe.", "https://example.com/a.jpg", scoreSchema);
+    await aiClient.generateWithVision("alt-text-single", "Describe.", "https://example.com/a.jpg", scoreSchema);
+
+    expect(generateWithVision).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not share a cache entry across different image URLs for the same prompt/schema", async () => {
+    const generateWithVision = vi.fn().mockResolvedValue(structuredResult({ score: 5 }, { provider: "openai" }));
+    getProviderMock.mockReturnValue({ name: "openai", generateWithVision });
+
+    await aiClient.generateWithVision("alt-text-single", "Describe.", "https://example.com/a.jpg", scoreSchema);
+    await aiClient.generateWithVision("alt-text-single", "Describe.", "https://example.com/b.jpg", scoreSchema);
+
+    expect(generateWithVision).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not share a cache entry across different users/sites", async () => {
+    const generateStructured = vi.fn().mockResolvedValue(structuredResult({ score: 88 }));
+    getProviderMock.mockReturnValue({ name: "groq", generateStructured });
+
+    await aiClient.generateStructured("seo-scoring", "Cache me.", scoreSchema, {
+      context: { userId: "user-1", siteId: "site-1" },
+    });
+    await aiClient.generateStructured("seo-scoring", "Cache me.", scoreSchema, {
+      context: { userId: "user-2", siteId: "site-1" },
+    });
+
+    expect(generateStructured).toHaveBeenCalledTimes(2);
+  });
+
+  it("bypassCache forces a fresh call even when a cached entry exists, and refreshes the cache", async () => {
+    const generateStructured = vi
+      .fn()
+      .mockResolvedValueOnce(structuredResult({ score: 1 }))
+      .mockResolvedValueOnce(structuredResult({ score: 2 }));
+    getProviderMock.mockReturnValue({ name: "groq", generateStructured });
+
+    const first = await aiClient.generateStructured("seo-scoring", "Regenerate me.", scoreSchema);
+    const second = await aiClient.generateStructured("seo-scoring", "Regenerate me.", scoreSchema, {
+      bypassCache: true,
+    });
+    // A third, non-bypassing call now sees the *refreshed* cache entry from
+    // the bypass call above, not the original — bypassCache skips the read,
+    // it doesn't opt the call out of ever being cached again.
+    const third = await aiClient.generateStructured("seo-scoring", "Regenerate me.", scoreSchema);
+
+    expect(first.data.score).toBe(1);
+    expect(second.data.score).toBe(2);
+    expect(third.data.score).toBe(2);
+    expect(generateStructured).toHaveBeenCalledTimes(2);
+  });
+
+  it("never caches page-generation or block-regeneration — identical calls always hit the provider again", async () => {
+    const generateStructured = vi.fn().mockResolvedValue(structuredResult({ score: 1 }));
+    getProviderMock.mockReturnValue({ name: "groq", generateStructured });
+
+    await aiClient.generateStructured("page-generation", "Write a page.", scoreSchema);
+    await aiClient.generateStructured("page-generation", "Write a page.", scoreSchema);
+    await aiClient.generateStructured("block-regeneration", "Rewrite a block.", scoreSchema);
+    await aiClient.generateStructured("block-regeneration", "Rewrite a block.", scoreSchema);
+
+    expect(generateStructured).toHaveBeenCalledTimes(4);
+  });
+
+  it("never caches a validation failure — the next identical call tries the provider fresh", async () => {
+    const generateStructured = vi
+      .fn()
+      .mockResolvedValue(structuredResult({ score: "nope" }, { provider: "openai" }));
+    getProviderMock.mockReturnValue({ name: "openai", generateStructured });
+
+    await expect(
+      aiClient.generateStructured("alt-text-single", "Cache-failure.", scoreSchema),
+    ).rejects.toBeInstanceOf(AiValidationError);
+    expect(generateStructured).toHaveBeenCalledTimes(3); // exhausted the bounded retry, never cached
+
+    generateStructured.mockResolvedValue(structuredResult({ score: 9 }, { provider: "openai" }));
+    const result = await aiClient.generateStructured("alt-text-single", "Cache-failure.", scoreSchema);
+
+    expect(result.data.score).toBe(9);
+    expect(generateStructured).toHaveBeenCalledTimes(4); // a real, fresh call — not a replayed failure
+  });
+
+  it("de-duplicates two concurrent identical calls into a single provider request", async () => {
+    let resolveCall!: (value: unknown) => void;
+    const generateStructured = vi.fn().mockReturnValue(
+      new Promise((resolve) => {
+        resolveCall = resolve;
+      }),
+    );
+    getProviderMock.mockReturnValue({ name: "groq", generateStructured });
+
+    const first = aiClient.generateStructured("seo-scoring", "Concurrent.", scoreSchema);
+    const second = aiClient.generateStructured("seo-scoring", "Concurrent.", scoreSchema);
+    // Both calls reach the actual provider call through several of their own
+    // `await`s (rate limiter, provider resolution) before `generateStructured`
+    // itself is invoked — wait for that to happen rather than asserting
+    // immediately, which would just be checking that nothing has run yet.
+    await vi.waitFor(() => expect(generateStructured).toHaveBeenCalledTimes(1));
+
+    resolveCall(structuredResult({ score: 3 }));
+    const [firstResult, secondResult] = await Promise.all([first, second]);
+
+    expect(firstResult.data.score).toBe(3);
+    expect(secondResult.data.score).toBe(3);
   });
 });
 

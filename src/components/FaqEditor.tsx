@@ -29,6 +29,13 @@ export function FaqEditor({ page }: { page: Page }) {
 
   const [generatePending, setGeneratePending] = useState(false);
   const [generateError, setGenerateError] = useState<string | null>(null);
+  // "faq-generation" is cached (src/lib/ai/cache.ts) on title/pageType/
+  // content — true once this session's own first AI generation succeeds, so
+  // every click after that is an explicit "Regenerate" (bypassCache) rather
+  // than silently appending the exact same cached FAQs a second time.
+  // Deliberately not derived from `faqItems.length`: those can be non-empty
+  // from the page's already-*saved* FAQs, before any AI call this session.
+  const [hasGeneratedThisSession, setHasGeneratedThisSession] = useState(false);
 
   const [savePending, setSavePending] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
@@ -47,11 +54,14 @@ export function FaqEditor({ page }: { page: Page }) {
   async function handleGenerate() {
     setGenerateError(null);
     setGeneratePending(true);
-    const result = await generateFaqListAction({
-      title: page.title,
-      pageType: page.pageType,
-      contentBlocks: page.contentBlocks,
-    });
+    const result = await generateFaqListAction(
+      {
+        title: page.title,
+        pageType: page.pageType,
+        contentBlocks: page.contentBlocks,
+      },
+      { bypassCache: hasGeneratedThisSession },
+    );
     setGeneratePending(false);
 
     if ("error" in result) {
@@ -71,6 +81,7 @@ export function FaqEditor({ page }: { page: Page }) {
         source: "ai-generated" as const,
       })),
     ]);
+    setHasGeneratedThisSession(true);
     markDirty();
     setLiveMessage(
       `${result.faqItems.length} FAQ${result.faqItems.length === 1 ? "" : "s"} generated and added below.`,
@@ -142,7 +153,7 @@ export function FaqEditor({ page }: { page: Page }) {
           disabled={generatePending}
           className="rounded-full border border-violet-300 px-4 py-2 text-xs font-medium text-violet-700 disabled:opacity-60 dark:border-violet-800 dark:text-violet-300"
         >
-          {generatePending ? "Generating…" : "Generate FAQs"}
+          {generatePending ? "Generating…" : hasGeneratedThisSession ? "Regenerate FAQs" : "Generate FAQs"}
         </button>
       </div>
 

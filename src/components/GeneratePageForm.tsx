@@ -16,17 +16,20 @@ import { draftBlockToContentBlock } from "@/lib/pages/mapping";
 // splitting it out of the initial /pages/new bundle costs nothing on the
 // path that matters (typing a brief) and pays for itself for everyone who
 // never clicks Generate at all.
-const DraftBlockEditor = dynamic(() => import("./DraftBlockEditor").then((mod) => mod.DraftBlockEditor), {
-  loading: () => (
-    <div
-      role="status"
-      aria-busy="true"
-      className="h-40 animate-pulse rounded-lg border border-zinc-200 bg-zinc-100 dark:border-zinc-800 dark:bg-zinc-900"
-    >
-      <span className="sr-only">Loading block editor…</span>
-    </div>
-  ),
-});
+const DraftBlockEditor = dynamic(
+  () => import("./DraftBlockEditor").then((mod) => mod.DraftBlockEditor),
+  {
+    loading: () => (
+      <div
+        role="status"
+        aria-busy="true"
+        className="h-40 animate-pulse rounded-lg border border-zinc-200 bg-zinc-100 dark:border-zinc-800 dark:bg-zinc-900"
+      >
+        <span className="sr-only">Loading block editor…</span>
+      </div>
+    ),
+  },
+);
 
 const fieldClass =
   "mt-1 w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-900";
@@ -84,7 +87,9 @@ function toDraftBlocks(blocks: PageDraftBlock[]): DraftBlockState[] {
 // through later regenerations) — so unrelated blocks' identity never
 // churns when only one block changes.
 function toContentBlocks(blocks: DraftBlockState[]): ContentBlock[] {
-  return blocks.map((b, order) => draftBlockToContentBlock(b.block, b.localId, order));
+  return blocks.map((b, order) =>
+    draftBlockToContentBlock(b.block, b.localId, order),
+  );
 }
 
 function updateBlock(
@@ -94,7 +99,9 @@ function updateBlock(
 ): DraftState {
   return {
     ...draft,
-    blocks: draft.blocks.map((b) => (b.localId === localId ? { ...b, ...patch } : b)),
+    blocks: draft.blocks.map((b) =>
+      b.localId === localId ? { ...b, ...patch } : b,
+    ),
   };
 }
 
@@ -169,7 +176,10 @@ export function GeneratePageForm() {
     const current = draft.blocks.find((b) => b.localId === localId);
     if (!current) return;
 
-    setDraft((prev) => prev && updateBlock(prev, localId, { pending: true, error: null }));
+    setDraft(
+      (prev) =>
+        prev && updateBlock(prev, localId, { pending: true, error: null }),
+    );
 
     // regenerateBlockAction never persists anything (SPEC.md §17) — this
     // only ever produces a suggestion to review, never touches Sanity. Sent
@@ -191,9 +201,16 @@ export function GeneratePageForm() {
     setDraft((prev) => {
       if (!prev) return prev;
       if ("error" in result) {
-        return updateBlock(prev, localId, { pending: false, error: result.error });
+        return updateBlock(prev, localId, {
+          pending: false,
+          error: result.error,
+        });
       }
-      return updateBlock(prev, localId, { pending: false, error: null, suggestion: result.block });
+      return updateBlock(prev, localId, {
+        pending: false,
+        error: null,
+        suggestion: result.block,
+      });
     });
   }
 
@@ -202,12 +219,17 @@ export function GeneratePageForm() {
       if (!prev) return prev;
       const current = prev.blocks.find((b) => b.localId === localId);
       if (!current?.suggestion) return prev;
-      return updateBlock(prev, localId, { block: current.suggestion, suggestion: null });
+      return updateBlock(prev, localId, {
+        block: current.suggestion,
+        suggestion: null,
+      });
     });
   }
 
   function handleRejectSuggestion(localId: string) {
-    setDraft((prev) => prev && updateBlock(prev, localId, { suggestion: null }));
+    setDraft(
+      (prev) => prev && updateBlock(prev, localId, { suggestion: null }),
+    );
   }
 
   if (!draft) {
@@ -227,13 +249,18 @@ export function GeneratePageForm() {
           />
         </div>
         <div>
-          <label htmlFor="brief-page-type" className="block text-sm font-medium">
+          <label
+            htmlFor="brief-page-type"
+            className="block text-sm font-medium"
+          >
             Page type
           </label>
           <select
             id="brief-page-type"
             value={brief.pageType}
-            onChange={(e) => setBrief({ ...brief, pageType: e.target.value as PageType })}
+            onChange={(e) =>
+              setBrief({ ...brief, pageType: e.target.value as PageType })
+            }
             className={fieldClass}
           >
             {PAGE_TYPES.map((type) => (
@@ -244,19 +271,30 @@ export function GeneratePageForm() {
           </select>
         </div>
         <div>
-          <label htmlFor="brief-target-keyword" className="block text-sm font-medium">
-            Target keyword
+          <label
+            htmlFor="brief-target-keyword"
+            className="block text-sm font-medium"
+          >
+            Target keyword{" "}
+            <span className="font-normal text-zinc-500 dark:text-zinc-400">
+              (optional)
+            </span>
           </label>
           <input
             id="brief-target-keyword"
             value={brief.targetKeyword}
-            onChange={(e) => setBrief({ ...brief, targetKeyword: e.target.value })}
+            onChange={(e) =>
+              setBrief({ ...brief, targetKeyword: e.target.value })
+            }
             className={fieldClass}
           />
         </div>
         <div>
           <label htmlFor="brief-audience" className="block text-sm font-medium">
-            Audience
+            Audience{" "}
+            <span className="font-normal text-zinc-500 dark:text-zinc-400">
+              (optional)
+            </span>
           </label>
           <input
             id="brief-audience"
@@ -268,7 +306,10 @@ export function GeneratePageForm() {
         </div>
         <div>
           <label htmlFor="brief-tone" className="block text-sm font-medium">
-            Tone
+            Tone{" "}
+            <span className="font-normal text-zinc-500 dark:text-zinc-400">
+              (optional)
+            </span>
           </label>
           <input
             id="brief-tone"
@@ -279,8 +320,14 @@ export function GeneratePageForm() {
           />
         </div>
         <div>
-          <label htmlFor="brief-key-points" className="block text-sm font-medium">
-            Key points
+          <label
+            htmlFor="brief-key-points"
+            className="block text-sm font-medium"
+          >
+            Key points{" "}
+            <span className="font-normal text-zinc-500 dark:text-zinc-400">
+              (optional)
+            </span>
           </label>
           <textarea
             id="brief-key-points"
@@ -317,7 +364,10 @@ export function GeneratePageForm() {
       <h2 className="sr-only">Generated draft</h2>
       <div className="flex items-center justify-between gap-4">
         {savedSlug ? (
-          <p role="status" className="text-sm text-emerald-700 dark:text-emerald-400">
+          <p
+            role="status"
+            className="text-sm text-emerald-700 dark:text-emerald-400"
+          >
             Saved as draft.{" "}
             <Link href={`/pages/${savedSlug}`} className="underline">
               View page
@@ -359,19 +409,27 @@ export function GeneratePageForm() {
           />
         </div>
         <div>
-          <label htmlFor="draft-meta-description" className="block text-sm font-medium">
+          <label
+            htmlFor="draft-meta-description"
+            className="block text-sm font-medium"
+          >
             Meta description
           </label>
           <textarea
             id="draft-meta-description"
             value={draft.metaDescription}
-            onChange={(e) => setDraft({ ...draft, metaDescription: e.target.value })}
+            onChange={(e) =>
+              setDraft({ ...draft, metaDescription: e.target.value })
+            }
             rows={2}
             className={fieldClass}
           />
         </div>
         <div>
-          <label htmlFor="draft-target-keyword" className="block text-sm font-medium">
+          <label
+            htmlFor="draft-target-keyword"
+            className="block text-sm font-medium"
+          >
             Target keyword
           </label>
           <input
@@ -393,7 +451,11 @@ export function GeneratePageForm() {
             suggestion={b.suggestion}
             pending={b.pending}
             error={b.error}
-            onChange={(block) => setDraft((prev) => prev && updateBlock(prev, b.localId, { block }))}
+            onChange={(block) =>
+              setDraft(
+                (prev) => prev && updateBlock(prev, b.localId, { block }),
+              )
+            }
             onRegenerate={() => handleRegenerate(b.localId)}
             onAcceptSuggestion={() => handleAcceptSuggestion(b.localId)}
             onRejectSuggestion={() => handleRejectSuggestion(b.localId)}
@@ -416,7 +478,11 @@ export function GeneratePageForm() {
         disabled={savePending}
         className="w-full rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white disabled:opacity-60 dark:bg-white dark:text-zinc-900"
       >
-        {savePending ? "Saving…" : cmsDocumentId ? "Save changes" : "Save to Sanity as draft"}
+        {savePending
+          ? "Saving…"
+          : cmsDocumentId
+            ? "Save changes"
+            : "Save as draft"}
       </button>
     </div>
   );

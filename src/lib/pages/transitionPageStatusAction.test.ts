@@ -6,9 +6,18 @@ vi.mock("@/lib/auth/dal", () => ({ requireUser: () => requireUserMock() }));
 const updatePageMock = vi.fn();
 const getAdapterForCurrentUserMock = vi.fn();
 const getActiveSiteForCurrentUserMock = vi.fn();
+// The real `@/lib/cms` barrel also exports `getAdapterForCurrentUser` from
+// resolveAdapter.ts, which imports the `server-only` sentinel package (no
+// real implementation outside Next's own bundler) — so this can't spread the
+// barrel's real exports via `importOriginal` the way a plain mock normally
+// would. `describeCmsActionFailure` is imported directly from its own
+// (plain, server-only-free) module instead, so this still exercises the
+// real error-translation logic, not a stub.
+const { describeCmsActionFailure } = await import("@/lib/cms/errorMessage");
 vi.mock("@/lib/cms", () => ({
   getAdapterForCurrentUser: () => getAdapterForCurrentUserMock(),
   getActiveSiteForCurrentUser: () => getActiveSiteForCurrentUserMock(),
+  describeCmsActionFailure,
 }));
 
 const logPageActivityMock = vi.fn();
@@ -16,19 +25,30 @@ vi.mock("@/lib/audit", () => ({
   logPageActivity: (...args: unknown[]) => logPageActivityMock(...args),
 }));
 
-const { transitionPageStatusAction } = await import("./transitionPageStatusAction");
+const { transitionPageStatusAction } =
+  await import("./transitionPageStatusAction");
 
 beforeEach(() => {
-  requireUserMock.mockReset().mockResolvedValue({ id: "user-1", email: "owner@example.com" });
+  requireUserMock
+    .mockReset()
+    .mockResolvedValue({ id: "user-1", email: "owner@example.com" });
   updatePageMock.mockReset();
-  getAdapterForCurrentUserMock.mockReset().mockResolvedValue({ updatePage: updatePageMock });
-  getActiveSiteForCurrentUserMock.mockReset().mockResolvedValue({ id: "site-1" });
+  getAdapterForCurrentUserMock
+    .mockReset()
+    .mockResolvedValue({ updatePage: updatePageMock });
+  getActiveSiteForCurrentUserMock
+    .mockReset()
+    .mockResolvedValue({ id: "site-1" });
   logPageActivityMock.mockReset().mockResolvedValue(undefined);
 });
 
 describe("transitionPageStatusAction", () => {
   it("applies a legal transition and logs it", async () => {
-    updatePageMock.mockResolvedValue({ id: "page-1", cmsDocumentId: "page-1", status: "in-review" });
+    updatePageMock.mockResolvedValue({
+      id: "page-1",
+      cmsDocumentId: "page-1",
+      status: "in-review",
+    });
 
     const result = await transitionPageStatusAction({
       cmsDocumentId: "page-1",
@@ -36,7 +56,9 @@ describe("transitionPageStatusAction", () => {
       action: "submit",
     });
 
-    expect(updatePageMock).toHaveBeenCalledWith("page-1", { status: "in-review" });
+    expect(updatePageMock).toHaveBeenCalledWith("page-1", {
+      status: "in-review",
+    });
     expect("page" in result).toBe(true);
     expect(logPageActivityMock).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -63,7 +85,11 @@ describe("transitionPageStatusAction", () => {
   });
 
   it("allows reject from approved back to draft", async () => {
-    updatePageMock.mockResolvedValue({ id: "page-1", cmsDocumentId: "page-1", status: "draft" });
+    updatePageMock.mockResolvedValue({
+      id: "page-1",
+      cmsDocumentId: "page-1",
+      status: "draft",
+    });
 
     const result = await transitionPageStatusAction({
       cmsDocumentId: "page-1",
@@ -89,7 +115,11 @@ describe("transitionPageStatusAction", () => {
 
   it("still applies the transition even when there is no active site to attribute the log to", async () => {
     getActiveSiteForCurrentUserMock.mockResolvedValue(null);
-    updatePageMock.mockResolvedValue({ id: "page-1", cmsDocumentId: "page-1", status: "in-review" });
+    updatePageMock.mockResolvedValue({
+      id: "page-1",
+      cmsDocumentId: "page-1",
+      status: "in-review",
+    });
 
     const result = await transitionPageStatusAction({
       cmsDocumentId: "page-1",

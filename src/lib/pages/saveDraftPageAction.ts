@@ -1,7 +1,11 @@
 "use server";
 
 import { requireUser } from "@/lib/auth/dal";
-import { getActiveSiteForCurrentUser, getAdapterForCurrentUser } from "@/lib/cms";
+import {
+  describeCmsActionFailure,
+  getActiveSiteForCurrentUser,
+  getAdapterForCurrentUser,
+} from "@/lib/cms";
 import { logPageActivity } from "@/lib/audit";
 import { summarizeContentChange, type ContentSnapshot } from "./auditSummary";
 import type { ContentBlock, Page, PageType } from "@/types";
@@ -110,7 +114,9 @@ export async function saveDraftPageAction(
             userId: user.id,
             userEmail: user.email ?? undefined,
             action: "content-updated",
-            summary: input.viaAiSuggestion ? `${summary} (includes an applied AI suggestion)` : summary,
+            summary: input.viaAiSuggestion
+              ? `${summary} (includes an applied AI suggestion)`
+              : summary,
           });
         }
       }
@@ -119,7 +125,7 @@ export async function saveDraftPageAction(
     return { page };
   } catch (err) {
     return {
-      error: err instanceof Error ? err.message : "Failed to save this page.",
+      error: describeCmsActionFailure(err, "Failed to save this page."),
     };
   }
 }

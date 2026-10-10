@@ -16,7 +16,7 @@ export default function SignupPage() {
         .
       </p>
 
-      <AuthForm action={signupAction} submitLabel="Sign up" />
+      <AuthForm action={signupAction} submitLabel="Sign up" mode="signup" />
     </div>
   );
 }

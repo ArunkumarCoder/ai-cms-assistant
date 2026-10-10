@@ -1,7 +1,13 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { getAdapterForCurrentUser, NoSiteConnectedError } from "@/lib/cms";
+import {
+  describeCmsActionFailure,
+  getAdapterForCurrentUser,
+  NoSiteConnectedError,
+} from "@/lib/cms";
 import type { PageSummary } from "@/lib/cms";
+import { buildGettingStartedChecklist } from "@/lib/onboarding/checklist";
+import { GettingStartedChecklist } from "@/components/GettingStartedChecklist";
 
 export const metadata = { title: "Pages" };
 
@@ -16,10 +22,13 @@ async function getPages(): Promise<PagesResult> {
     if (err instanceof NoSiteConnectedError) {
       redirect("/sites");
     }
-    console.error("Failed to fetch pages from Sanity:", err);
+    console.error("Failed to fetch pages:", err);
     return {
       kind: "error",
-      message: err instanceof Error ? err.message : "Unknown error",
+      message: describeCmsActionFailure(
+        err,
+        "Couldn't load your pages. Please try again.",
+      ),
     };
   }
 }
@@ -42,7 +51,7 @@ export default async function PagesIndex() {
         <div>
           <h1 className="text-3xl font-semibold tracking-tight">Pages</h1>
           <p className="mt-2 text-zinc-600 dark:text-zinc-400">
-            Live from Sanity — project content, not mock data.
+            Pages from your connected Site — real content, not mock data.
           </p>
         </div>
         <Link
@@ -53,16 +62,31 @@ export default async function PagesIndex() {
         </Link>
       </div>
 
+      {result.kind === "ok" && (
+        <GettingStartedChecklist
+          items={buildGettingStartedChecklist(true, result.pages)}
+        />
+      )}
+
       {result.kind === "error" && (
         <div className="mt-8 rounded-lg border border-red-200 bg-red-50 p-4 text-red-800 dark:border-red-900/50 dark:bg-red-950/40 dark:text-red-300">
-          <p className="font-medium">Couldn&apos;t load pages from Sanity.</p>
+          <p className="font-medium">Couldn&apos;t load your pages.</p>
           <p className="mt-1 text-sm opacity-80">{result.message}</p>
         </div>
       )}
 
       {result.kind === "ok" && result.pages.length === 0 && (
         <div className="mt-8 rounded-lg border border-dashed border-zinc-300 p-8 text-center text-zinc-500 dark:border-zinc-700 dark:text-zinc-400">
-          No pages yet. Add one in Sanity Studio to see it here.
+          <p>
+            No pages yet — generate one from a brief and it&apos;ll show up
+            here.
+          </p>
+          <Link
+            href="/pages/new"
+            className="mt-4 inline-block rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white dark:bg-white dark:text-zinc-900"
+          >
+            Generate your first page
+          </Link>
         </div>
       )}
 

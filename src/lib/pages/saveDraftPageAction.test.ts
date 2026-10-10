@@ -7,9 +7,15 @@ const createPageMock = vi.fn();
 const updatePageMock = vi.fn();
 const getAdapterForCurrentUserMock = vi.fn();
 const getActiveSiteForCurrentUserMock = vi.fn();
+// describeCmsActionFailure comes from its own plain module, not the real
+// "@/lib/cms" barrel — that barrel also exports getAdapterForCurrentUser from
+// resolveAdapter.ts, which imports the `server-only` sentinel package (no
+// real implementation outside Next's own bundler).
+const { describeCmsActionFailure } = await import("@/lib/cms/errorMessage");
 vi.mock("@/lib/cms", () => ({
   getAdapterForCurrentUser: () => getAdapterForCurrentUserMock(),
   getActiveSiteForCurrentUser: () => getActiveSiteForCurrentUserMock(),
+  describeCmsActionFailure,
 }));
 
 const logPageActivityMock = vi.fn();
@@ -24,20 +30,28 @@ const CONTENT_BLOCKS = [
 ];
 
 beforeEach(() => {
-  requireUserMock.mockReset().mockResolvedValue({ id: "user-1", email: "owner@example.com" });
+  requireUserMock
+    .mockReset()
+    .mockResolvedValue({ id: "user-1", email: "owner@example.com" });
   createPageMock.mockReset();
   updatePageMock.mockReset();
   getAdapterForCurrentUserMock.mockReset().mockResolvedValue({
     createPage: createPageMock,
     updatePage: updatePageMock,
   });
-  getActiveSiteForCurrentUserMock.mockReset().mockResolvedValue({ id: "site-1" });
+  getActiveSiteForCurrentUserMock
+    .mockReset()
+    .mockResolvedValue({ id: "site-1" });
   logPageActivityMock.mockReset().mockResolvedValue(undefined);
 });
 
 describe("saveDraftPageAction", () => {
   it("creates a new page (via the adapter, not a direct Sanity call) when there is no cmsDocumentId", async () => {
-    createPageMock.mockResolvedValue({ id: "page-1", cmsDocumentId: "page-1", slug: "my-page" });
+    createPageMock.mockResolvedValue({
+      id: "page-1",
+      cmsDocumentId: "page-1",
+      slug: "my-page",
+    });
 
     const result = await saveDraftPageAction({
       title: "My Page",
@@ -62,7 +76,11 @@ describe("saveDraftPageAction", () => {
   });
 
   it("logs a page-created audit entry on first save", async () => {
-    createPageMock.mockResolvedValue({ id: "page-1", cmsDocumentId: "page-1", slug: "my-page" });
+    createPageMock.mockResolvedValue({
+      id: "page-1",
+      cmsDocumentId: "page-1",
+      slug: "my-page",
+    });
 
     await saveDraftPageAction({
       title: "My Page",
@@ -84,7 +102,11 @@ describe("saveDraftPageAction", () => {
   });
 
   it("updates an existing page when a cmsDocumentId is present", async () => {
-    updatePageMock.mockResolvedValue({ id: "page-1", cmsDocumentId: "page-1", slug: "my-page" });
+    updatePageMock.mockResolvedValue({
+      id: "page-1",
+      cmsDocumentId: "page-1",
+      slug: "my-page",
+    });
 
     await saveDraftPageAction({
       cmsDocumentId: "page-1",
@@ -105,7 +127,11 @@ describe("saveDraftPageAction", () => {
   });
 
   it("logs a content-updated audit entry with a diff-based summary when previousContent is given", async () => {
-    updatePageMock.mockResolvedValue({ id: "page-1", cmsDocumentId: "page-1", slug: "my-page" });
+    updatePageMock.mockResolvedValue({
+      id: "page-1",
+      cmsDocumentId: "page-1",
+      slug: "my-page",
+    });
 
     await saveDraftPageAction({
       cmsDocumentId: "page-1",
@@ -124,12 +150,19 @@ describe("saveDraftPageAction", () => {
     });
 
     expect(logPageActivityMock).toHaveBeenCalledWith(
-      expect.objectContaining({ action: "content-updated", summary: "title changed" }),
+      expect.objectContaining({
+        action: "content-updated",
+        summary: "title changed",
+      }),
     );
   });
 
   it("does not log an audit entry when previousContent is given and nothing actually changed", async () => {
-    updatePageMock.mockResolvedValue({ id: "page-1", cmsDocumentId: "page-1", slug: "my-page" });
+    updatePageMock.mockResolvedValue({
+      id: "page-1",
+      cmsDocumentId: "page-1",
+      slug: "my-page",
+    });
     const snapshot = {
       title: "Same Title",
       metaDescription: "desc",
@@ -164,7 +197,9 @@ describe("saveDraftPageAction", () => {
   });
 
   it("returns an error (does not throw) when there is no connected site", async () => {
-    getAdapterForCurrentUserMock.mockRejectedValue(new Error("No Sanity project connected"));
+    getAdapterForCurrentUserMock.mockRejectedValue(
+      new Error("No Sanity project connected"),
+    );
 
     const result = await saveDraftPageAction({
       title: "My Page",

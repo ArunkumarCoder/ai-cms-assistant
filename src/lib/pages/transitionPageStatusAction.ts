@@ -1,9 +1,16 @@
 "use server";
 
 import { requireUser } from "@/lib/auth/dal";
-import { getActiveSiteForCurrentUser, getAdapterForCurrentUser } from "@/lib/cms";
+import {
+  describeCmsActionFailure,
+  getActiveSiteForCurrentUser,
+  getAdapterForCurrentUser,
+} from "@/lib/cms";
 import { logPageActivity } from "@/lib/audit";
-import { resolvePageStatusTransition, type PageStatusAction } from "./pageStatusTransitions";
+import {
+  resolvePageStatusTransition,
+  type PageStatusAction,
+} from "./pageStatusTransitions";
 import type { Page, PageStatus } from "@/types";
 
 export interface TransitionPageStatusInput {
@@ -28,7 +35,10 @@ export async function transitionPageStatusAction(
   const user = await requireUser();
   const site = await getActiveSiteForCurrentUser();
 
-  const nextStatus = resolvePageStatusTransition(input.action, input.currentStatus);
+  const nextStatus = resolvePageStatusTransition(
+    input.action,
+    input.currentStatus,
+  );
   if (!nextStatus) {
     return {
       error: `Can't "${input.action}" a page that's currently "${input.currentStatus}".`,
@@ -37,7 +47,9 @@ export async function transitionPageStatusAction(
 
   try {
     const adapter = await getAdapterForCurrentUser();
-    const page = await adapter.updatePage(input.cmsDocumentId, { status: nextStatus });
+    const page = await adapter.updatePage(input.cmsDocumentId, {
+      status: nextStatus,
+    });
 
     if (site) {
       await logPageActivity({
@@ -47,14 +59,21 @@ export async function transitionPageStatusAction(
         userEmail: user.email ?? undefined,
         action: "status-changed",
         summary: `Status changed: ${input.currentStatus} → ${nextStatus}.`,
-        metadata: { from: input.currentStatus, to: nextStatus, transitionAction: input.action },
+        metadata: {
+          from: input.currentStatus,
+          to: nextStatus,
+          transitionAction: input.action,
+        },
       });
     }
 
     return { page };
   } catch (err) {
     return {
-      error: err instanceof Error ? err.message : "Failed to change this page's status.",
+      error: describeCmsActionFailure(
+        err,
+        "Failed to change this page's status.",
+      ),
     };
   }
 }

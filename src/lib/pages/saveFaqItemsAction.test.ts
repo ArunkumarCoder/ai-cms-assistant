@@ -7,9 +7,15 @@ vi.mock("@/lib/auth/dal", () => ({ requireUser: () => requireUserMock() }));
 const updatePageMock = vi.fn();
 const getAdapterForCurrentUserMock = vi.fn();
 const getActiveSiteForCurrentUserMock = vi.fn();
+// describeCmsActionFailure comes from its own plain module, not the real
+// "@/lib/cms" barrel — that barrel also exports getAdapterForCurrentUser from
+// resolveAdapter.ts, which imports the `server-only` sentinel package (no
+// real implementation outside Next's own bundler).
+const { describeCmsActionFailure } = await import("@/lib/cms/errorMessage");
 vi.mock("@/lib/cms", () => ({
   getAdapterForCurrentUser: () => getAdapterForCurrentUserMock(),
   getActiveSiteForCurrentUser: () => getActiveSiteForCurrentUserMock(),
+  describeCmsActionFailure,
 }));
 
 const logPageActivityMock = vi.fn();
@@ -31,10 +37,16 @@ function faq(overrides: Partial<FaqItem> = {}): FaqItem {
 }
 
 beforeEach(() => {
-  requireUserMock.mockReset().mockResolvedValue({ id: "user-1", email: "owner@example.com" });
+  requireUserMock
+    .mockReset()
+    .mockResolvedValue({ id: "user-1", email: "owner@example.com" });
   updatePageMock.mockReset();
-  getAdapterForCurrentUserMock.mockReset().mockResolvedValue({ updatePage: updatePageMock });
-  getActiveSiteForCurrentUserMock.mockReset().mockResolvedValue({ id: "site-1" });
+  getAdapterForCurrentUserMock
+    .mockReset()
+    .mockResolvedValue({ updatePage: updatePageMock });
+  getActiveSiteForCurrentUserMock
+    .mockReset()
+    .mockResolvedValue({ id: "site-1" });
   logPageActivityMock.mockReset().mockResolvedValue(undefined);
 });
 
@@ -43,7 +55,11 @@ describe("saveFaqItemsAction", () => {
     const faqItems = [faq({ id: "faq-1" }), faq({ id: "faq-2", order: 1 })];
     updatePageMock.mockResolvedValue({ id: "page-1", faqItems });
 
-    const result = await saveFaqItemsAction({ cmsDocumentId: "page-1", faqItems, previousFaqItems: [] });
+    const result = await saveFaqItemsAction({
+      cmsDocumentId: "page-1",
+      faqItems,
+      previousFaqItems: [],
+    });
 
     expect(updatePageMock).toHaveBeenCalledWith("page-1", { faqItems });
     expect("page" in result).toBe(true);
@@ -89,7 +105,11 @@ describe("saveFaqItemsAction", () => {
     const faqItems = [faq({ id: "faq-1", source: "ai-generated" })];
     updatePageMock.mockResolvedValue({ id: "page-1", faqItems });
 
-    await saveFaqItemsAction({ cmsDocumentId: "page-1", faqItems, previousFaqItems: [] });
+    await saveFaqItemsAction({
+      cmsDocumentId: "page-1",
+      faqItems,
+      previousFaqItems: [],
+    });
 
     expect(logPageActivityMock).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -105,7 +125,11 @@ describe("saveFaqItemsAction", () => {
     const faqItems = [faq({ id: "faq-1" })];
     updatePageMock.mockResolvedValue({ id: "page-1", faqItems });
 
-    await saveFaqItemsAction({ cmsDocumentId: "page-1", faqItems, previousFaqItems: faqItems });
+    await saveFaqItemsAction({
+      cmsDocumentId: "page-1",
+      faqItems,
+      previousFaqItems: faqItems,
+    });
 
     expect(logPageActivityMock).not.toHaveBeenCalled();
   });

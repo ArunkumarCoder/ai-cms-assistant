@@ -1,7 +1,11 @@
 "use server";
 
 import { requireUser } from "@/lib/auth/dal";
-import { getActiveSiteForCurrentUser, getAdapterForCurrentUser } from "@/lib/cms";
+import {
+  describeCmsActionFailure,
+  getActiveSiteForCurrentUser,
+  getAdapterForCurrentUser,
+} from "@/lib/cms";
 import { logPageActivity } from "@/lib/audit";
 import { summarizeFaqChange } from "./auditSummary";
 import type { FaqItem, Page } from "@/types";
@@ -36,31 +40,41 @@ export async function saveFaqItemsAction(
   for (const item of input.faqItems) {
     if (!item.question.trim() || !item.answer.trim()) {
       return {
-        error: "Every FAQ needs both a question and an answer — remove any empty ones before saving.",
+        error:
+          "Every FAQ needs both a question and an answer — remove any empty ones before saving.",
       };
     }
   }
 
   try {
     const adapter = await getAdapterForCurrentUser();
-    const page = await adapter.updatePage(input.cmsDocumentId, { faqItems: input.faqItems });
+    const page = await adapter.updatePage(input.cmsDocumentId, {
+      faqItems: input.faqItems,
+    });
 
     if (site) {
-      const summary = summarizeFaqChange(input.previousFaqItems, input.faqItems);
+      const summary = summarizeFaqChange(
+        input.previousFaqItems,
+        input.faqItems,
+      );
       if (summary) {
         // An AI-generated FAQ only ever reaches this save via FaqEditor's
         // own "Generate FAQs" step, reviewed and possibly edited first
         // (SPEC.md §15) — a `source` of "ai-generated" surviving all the way
         // to a successful save is itself the signal that an AI suggestion
         // was accepted, no separate tracked flag needed.
-        const viaAiGeneration = input.faqItems.some((item) => item.source === "ai-generated");
+        const viaAiGeneration = input.faqItems.some(
+          (item) => item.source === "ai-generated",
+        );
         await logPageActivity({
           pageId: page.cmsDocumentId ?? page.id,
           siteId: site.id,
           userId: user.id,
           userEmail: user.email ?? undefined,
           action: "faqs-updated",
-          summary: viaAiGeneration ? `${summary} (includes AI-generated FAQs)` : summary,
+          summary: viaAiGeneration
+            ? `${summary} (includes AI-generated FAQs)`
+            : summary,
         });
       }
     }
@@ -68,7 +82,7 @@ export async function saveFaqItemsAction(
     return { page };
   } catch (err) {
     return {
-      error: err instanceof Error ? err.message : "Failed to save FAQs.",
+      error: describeCmsActionFailure(err, "Failed to save FAQs."),
     };
   }
 }

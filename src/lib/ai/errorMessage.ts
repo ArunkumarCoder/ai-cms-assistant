@@ -16,9 +16,26 @@ import { AiValidationError } from "./validation";
 // gets its real message, since "try again in a moment" would be actively
 // misleading for a genuinely non-transient failure (bad input, a schema
 // mismatch, an auth problem) that retrying can't fix.
-export function describeAiActionFailure(err: unknown, fallback: string): string {
-  if (err instanceof AiProviderError && err.retryable) {
-    return "The AI provider is busy right now — please try again in a moment.";
+export function describeAiActionFailure(
+  err: unknown,
+  fallback: string,
+): string {
+  if (err instanceof AiProviderError) {
+    if (err.retryable) {
+      return "The AI provider is busy right now — please try again in a moment.";
+    }
+    // Day 35's first-time-user audit caught this: a *non*-retryable
+    // AiProviderError (bad/missing API key, a 400 the app itself sent) still
+    // carries whatever raw string the provider's own SDK threw — e.g. "401
+    // Incorrect API key provided: sk-***" — which used to fall straight
+    // through to the final `err.message` passthrough below and read as the
+    // user's own fault when it's actually a backend configuration problem.
+    // Never retryable, so "try again" would be dishonest; this names the
+    // actual next step (someone needs to go fix the configuration) instead.
+    return (
+      "This AI request couldn't be completed — the AI provider rejected it. " +
+      "If this keeps happening, the site's AI provider configuration may need attention."
+    );
   }
   // client.ts's runValidated already retried this with the validation error
   // fed back into the prompt (SPEC.md's Day 31 task) before ever reaching

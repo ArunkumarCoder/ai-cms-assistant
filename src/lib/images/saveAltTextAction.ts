@@ -1,7 +1,7 @@
 "use server";
 
 import { requireUser } from "@/lib/auth/dal";
-import { getAdapterForCurrentUser } from "@/lib/cms";
+import { describeCmsActionFailure, getAdapterForCurrentUser } from "@/lib/cms";
 import type { ImageAsset } from "@/types";
 
 // The only place a generated (or hand-written) alt text ever reaches Sanity —
@@ -46,7 +46,7 @@ export async function saveAltTextAction(
     return { image };
   } catch (err) {
     return {
-      error: err instanceof Error ? err.message : "Failed to save alt text.",
+      error: describeCmsActionFailure(err, "Failed to save alt text."),
     };
   }
 }

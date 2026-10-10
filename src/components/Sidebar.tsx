@@ -4,17 +4,17 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
+// No "FAQs" entry on purpose: there used to be a disabled "FAQs · Soon" item
+// here, but FAQ generation (FaqEditor.tsx) has been a fully working feature,
+// reachable from every page's own editor, since long before that label was
+// removed (Day 35 walkthrough audit) — it was actively telling first-time
+// users a real, working feature didn't exist yet.
 const NAV_ITEMS = [
   { href: "/sites", label: "Sites" },
   { href: "/pages", label: "Pages" },
   { href: "/media", label: "Media" },
   { href: "/dashboard", label: "Dashboard" },
 ];
-
-// The cost/usage dashboard (tomorrow) extends this same screen rather than
-// needing its own nav entry — listed now, disabled, so the shell's shape
-// doesn't have to change again when it lands.
-const SOON_ITEMS = ["FAQs"];
 
 const SIDEBAR_NAV_ID = "app-sidebar-nav";
 
@@ -58,7 +58,14 @@ export function Sidebar() {
         className="fixed top-3 left-4 z-40 rounded-lg border border-zinc-300 bg-white p-2 text-zinc-700 sm:hidden dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-300"
       >
         <span className="sr-only">{isOpen ? "Close menu" : "Open menu"}</span>
-        <svg aria-hidden="true" viewBox="0 0 20 20" fill="none" className="h-5 w-5" stroke="currentColor" strokeWidth={1.75}>
+        <svg
+          aria-hidden="true"
+          viewBox="0 0 20 20"
+          fill="none"
+          className="h-5 w-5"
+          stroke="currentColor"
+          strokeWidth={1.75}
+        >
           {isOpen ? (
             <path d="M5 5l10 10M15 5L5 15" strokeLinecap="round" />
           ) : (
@@ -104,17 +111,6 @@ export function Sidebar() {
               </li>
             );
           })}
-          {SOON_ITEMS.map((label) => (
-            <li key={label}>
-              <span
-                aria-disabled="true"
-                className="flex items-center justify-between rounded-lg px-3 py-2 text-sm text-zinc-400 dark:text-zinc-600"
-              >
-                {label}
-                <span className="text-xs">Soon</span>
-              </span>
-            </li>
-          ))}
         </ul>
       </nav>
     </>

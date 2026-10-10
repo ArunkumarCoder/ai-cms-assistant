@@ -5,7 +5,11 @@ import { FaqEditorLazy } from "@/components/FaqEditorLazy";
 import { SeoPanel } from "@/components/SeoPanel";
 import { PageStatusPanel } from "@/components/PageStatusPanel";
 import { PageHistoryPanel } from "@/components/PageHistoryPanel";
-import { getAdapterForCurrentUser, NoSiteConnectedError } from "@/lib/cms";
+import {
+  describeCmsActionFailure,
+  getAdapterForCurrentUser,
+  NoSiteConnectedError,
+} from "@/lib/cms";
 import { buildFaqPageJsonLd, serializeJsonLd } from "@/lib/faq";
 import { getPageActivity } from "@/lib/audit";
 import type { Page } from "@/types";
@@ -21,10 +25,13 @@ async function getPage(
     if (err instanceof NoSiteConnectedError) {
       redirect("/sites");
     }
-    console.error(`Failed to fetch page "${slug}" from Sanity:`, err);
+    console.error(`Failed to fetch page "${slug}":`, err);
     return {
       page: null,
-      error: err instanceof Error ? err.message : "Unknown error",
+      error: describeCmsActionFailure(
+        err,
+        "Couldn't load this page. Please try again.",
+      ),
     };
   }
 }
@@ -44,9 +51,7 @@ export default async function PageDetailRoute({
           ← Back to pages
         </Link>
         <div className="mt-6 rounded-lg border border-red-200 bg-red-50 p-4 text-red-800 dark:border-red-900/50 dark:bg-red-950/40 dark:text-red-300">
-          <p className="font-medium">
-            Couldn&apos;t load this page from Sanity.
-          </p>
+          <p className="font-medium">Couldn&apos;t load this page.</p>
           <p className="mt-1 text-sm opacity-80">{error}</p>
         </div>
       </div>
@@ -84,17 +89,14 @@ export default async function PageDetailRoute({
         <h1 className="text-3xl font-semibold tracking-tight">{page.title}</h1>
         <div className="mt-3 flex flex-wrap items-center gap-3 text-sm text-zinc-500 dark:text-zinc-400">
           <span className="capitalize">{page.pageType}</span>
-          {/* Status itself now lives in PageStatusPanel below, with a
-              properly-formatted label ("In review", not CSS `capitalize`'s
-              "In-review") and the actual transition controls next to it —
-              showing the same value twice, differently formatted, would be
-              worse than just showing it once, in the place you can act on it. */}
-          {typeof page.qualityScore === "number" && (
-            <>
-              <span>·</span>
-              <span>Quality score: {page.qualityScore}/100</span>
-            </>
-          )}
+          {/* Status lives in PageStatusPanel below, with a properly-formatted
+              label ("In review", not CSS `capitalize`'s "In-review") and the
+              actual transition controls next to it. Quality score used to be
+              repeated here too, as a bare number with no context — removed
+              (Day 35 walkthrough audit) since QualityScorePanel immediately
+              below shows the same score with its full sub-score breakdown;
+              showing it twice, once with no explanation, just made it unclear
+              which one was "the real" score. */}
         </div>
       </header>
 

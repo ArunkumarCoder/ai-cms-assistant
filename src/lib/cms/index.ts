@@ -2,6 +2,7 @@
 export type { CmsAdapter } from "./adapter";
 export { CmsAdapterError } from "./errors";
 export type { CmsAdapterErrorKind } from "./errors";
+export { describeCmsActionFailure } from "./errorMessage";
 export type {
   CreatePageInput,
   ImageListFilter,

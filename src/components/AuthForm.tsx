@@ -6,12 +6,20 @@ import type { AuthActionState } from "@/lib/auth/actions";
 export function AuthForm({
   action,
   submitLabel,
+  mode,
 }: {
   action: (
     state: AuthActionState,
     formData: FormData,
   ) => Promise<AuthActionState>;
   submitLabel: string;
+  // Drives the password field's `autoComplete` value and whether the
+  // 8-character hint shows up front — a signup page previously hardcoded
+  // `autoComplete="current-password"` (the login-screen value), which tells
+  // a password manager "fill in the existing password" instead of "offer to
+  // generate/save a new one," on the one screen where a new one is actually
+  // being created (Day 35 walkthrough audit).
+  mode: "login" | "signup";
 }) {
   const [state, formAction, pending] = useActionState(action, undefined);
 
@@ -41,9 +49,18 @@ export function AuthForm({
           type="password"
           required
           minLength={8}
-          autoComplete="current-password"
+          autoComplete={mode === "signup" ? "new-password" : "current-password"}
+          aria-describedby={mode === "signup" ? "password-hint" : undefined}
           className="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-900"
         />
+        {mode === "signup" && (
+          <p
+            id="password-hint"
+            className="mt-1 text-xs text-zinc-500 dark:text-zinc-400"
+          >
+            At least 8 characters.
+          </p>
+        )}
       </div>
 
       {state?.error && (

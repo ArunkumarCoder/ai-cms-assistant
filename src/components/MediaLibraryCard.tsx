@@ -13,8 +13,10 @@ const STATUS_LABEL: Record<ImageAsset["altTextStatus"], string> = {
 
 const STATUS_CLASS: Record<ImageAsset["altTextStatus"], string> = {
   missing: "bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-300",
-  "ai-generated": "bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300",
-  reviewed: "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300",
+  "ai-generated":
+    "bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300",
+  reviewed:
+    "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300",
 };
 
 interface MediaLibraryCardProps {
@@ -78,16 +80,36 @@ export function MediaLibraryCard({
           {image.altText ? (
             `"${image.altText}"`
           ) : (
-            <span className="italic text-zinc-500 dark:text-zinc-400">No alt text</span>
+            <span className="italic text-zinc-500 dark:text-zinc-400">
+              No alt text
+            </span>
           )}
         </p>
         {assessment.flagged && !isReviewing && (
-          <p className="text-xs text-amber-700 dark:text-amber-400">{assessment.reason}</p>
+          <p className="text-xs text-amber-700 dark:text-amber-400">
+            {assessment.reason}
+          </p>
+        )}
+        {/* `phase.name` does reach "saved" right after a successful Accept
+            (MediaLibrary.tsx's runAccept) — this card just never rendered
+            anything different for it before, so accepting a suggestion had
+            no visible confirmation at all beyond the badge above eventually
+            changing after `router.refresh()` (Day 35 walkthrough audit). */}
+        {phase.name === "saved" && (
+          <p
+            role="status"
+            className="text-xs text-emerald-700 dark:text-emerald-400"
+          >
+            Saved.
+          </p>
         )}
         <p className="text-xs text-zinc-500 dark:text-zinc-400">
           Used on{" "}
           {page ? (
-            <Link href={`/pages/${page.slug}`} className="underline hover:no-underline">
+            <Link
+              href={`/pages/${page.slug}`}
+              className="underline hover:no-underline"
+            >
               {page.title}
             </Link>
           ) : (
@@ -97,7 +119,10 @@ export function MediaLibraryCard({
 
         {isReviewing && (
           <div className="mt-2 space-y-2 rounded-lg border border-violet-200 bg-violet-50 p-2 dark:border-violet-900/50 dark:bg-violet-950/40">
-            <p id={`alt-suggestion-label-${image.id}`} className="text-xs font-medium text-violet-800 dark:text-violet-300">
+            <p
+              id={`alt-suggestion-label-${image.id}`}
+              className="text-xs font-medium text-violet-800 dark:text-violet-300"
+            >
               AI suggestion — review or edit before saving
             </p>
             <textarea
@@ -108,14 +133,22 @@ export function MediaLibraryCard({
               rows={3}
               className="w-full rounded-lg border border-violet-300 bg-white px-2 py-1.5 text-sm text-zinc-900 disabled:opacity-60 dark:border-violet-800 dark:bg-zinc-900 dark:text-zinc-100"
             />
-            {(phase.suggestion.needsReview || phase.suggestion.confidence === "low") && (
+            {(phase.suggestion.needsReview ||
+              phase.suggestion.confidence === "low") && (
               <p className="text-xs text-violet-700 dark:text-violet-400">
-                {phase.suggestion.confidence === "low" ? "Low confidence — " : ""}
+                {phase.suggestion.confidence === "low"
+                  ? "Low confidence — "
+                  : ""}
                 Worth a careful read before accepting.
               </p>
             )}
             {phase.name === "reviewing" && phase.error && (
-              <p role="alert" className="text-xs text-red-700 dark:text-red-400">{phase.error}</p>
+              <p
+                role="alert"
+                className="text-xs text-red-700 dark:text-red-400"
+              >
+                {phase.error}
+              </p>
             )}
             <div className="flex items-center gap-2">
               <button
@@ -150,7 +183,9 @@ export function MediaLibraryCard({
         )}
 
         {phase.name === "failed" && (
-          <p role="alert" className="text-xs text-red-700 dark:text-red-400">{phase.message}</p>
+          <p role="alert" className="text-xs text-red-700 dark:text-red-400">
+            {phase.message}
+          </p>
         )}
       </div>
     </li>

@@ -19,13 +19,16 @@ const STATUS_LABEL: Record<Page["status"], string> = {
 
 const STATUS_CLASS: Record<Page["status"], string> = {
   draft: "bg-zinc-100 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300",
-  "in-review": "bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300",
+  "in-review":
+    "bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300",
   approved: "bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-300",
-  published: "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300",
+  published:
+    "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300",
 };
 
 const ACTION_BUTTON_CLASS: Record<PageStatusAction, string> = {
-  submit: "border border-zinc-300 hover:bg-zinc-50 dark:border-zinc-700 dark:hover:bg-zinc-800",
+  submit:
+    "border border-zinc-300 hover:bg-zinc-50 dark:border-zinc-700 dark:hover:bg-zinc-800",
   approve: "bg-blue-600 text-white hover:bg-blue-700",
   reject:
     "border border-red-300 text-red-800 hover:bg-red-50 dark:border-red-900/60 dark:text-red-300 dark:hover:bg-red-950/40",
@@ -40,11 +43,13 @@ export function PageStatusPanel({ page }: { page: Page }) {
   const router = useRouter();
   const [pending, setPending] = useState<PageStatusAction | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [updated, setUpdated] = useState(false);
 
   const actions = availablePageStatusActions(page.status);
 
   async function handleTransition(action: PageStatusAction) {
     setError(null);
+    setUpdated(false);
     setPending(action);
     const result = await transitionPageStatusAction({
       cmsDocumentId: page.cmsDocumentId ?? page.id,
@@ -57,45 +62,76 @@ export function PageStatusPanel({ page }: { page: Page }) {
       setError(result.error);
       return;
     }
+    // The status pill above is itself `role="status"`, so its new text is
+    // announced either way — this is for sighted users too, matching every
+    // other save/generate action's visible "Saved."-style confirmation
+    // (Day 35 walkthrough audit: this was the one data-changing action in
+    // the app with no visible success feedback beyond the badge itself
+    // changing color, easy to miss).
+    setUpdated(true);
     router.refresh();
   }
 
   return (
-    <div className="flex flex-wrap items-center justify-between gap-4 rounded-lg border border-zinc-200 p-4 dark:border-zinc-800">
-      <div className="flex items-center gap-3">
-        <span className="text-xs font-medium tracking-wide text-zinc-500 uppercase dark:text-zinc-400">
-          Status
-        </span>
-        <span
-          role="status"
-          className={`rounded-full px-3 py-1 text-sm font-medium ${STATUS_CLASS[page.status]}`}
-        >
-          {STATUS_LABEL[page.status]}
-        </span>
+    <div className="rounded-lg border border-zinc-200 p-4 dark:border-zinc-800">
+      <div className="flex flex-wrap items-center justify-between gap-4">
+        <div className="flex items-center gap-3">
+          <span className="text-xs font-medium tracking-wide text-zinc-500 uppercase dark:text-zinc-400">
+            Status
+          </span>
+          <span
+            role="status"
+            className={`rounded-full px-3 py-1 text-sm font-medium ${STATUS_CLASS[page.status]}`}
+          >
+            {STATUS_LABEL[page.status]}
+          </span>
+          {updated && (
+            <span
+              role="status"
+              className="text-xs text-emerald-700 dark:text-emerald-400"
+            >
+              Updated.
+            </span>
+          )}
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2">
+          {actions.length === 0 ? (
+            <span className="text-sm text-zinc-500 dark:text-zinc-400">
+              No further transitions.
+            </span>
+          ) : (
+            actions.map((action) => (
+              <button
+                key={action}
+                type="button"
+                onClick={() => handleTransition(action)}
+                disabled={pending !== null}
+                className={`rounded-lg px-3 py-1.5 text-sm font-medium disabled:opacity-60 ${ACTION_BUTTON_CLASS[action]}`}
+              >
+                {pending === action
+                  ? "Working…"
+                  : PAGE_STATUS_ACTION_LABEL[action]}
+              </button>
+            ))
+          )}
+        </div>
       </div>
 
-      <div className="flex flex-wrap items-center gap-2">
-        {actions.length === 0 ? (
-          <span className="text-sm text-zinc-500 dark:text-zinc-400">No further transitions.</span>
-        ) : (
-          actions.map((action) => (
-            <button
-              key={action}
-              type="button"
-              onClick={() => handleTransition(action)}
-              disabled={pending !== null}
-              className={`rounded-lg px-3 py-1.5 text-sm font-medium disabled:opacity-60 ${ACTION_BUTTON_CLASS[action]}`}
-            >
-              {pending === action ? "Working…" : PAGE_STATUS_ACTION_LABEL[action]}
-            </button>
-          ))
-        )}
-      </div>
+      {/* This status tracks the app's own review workflow — it's a label on
+          this record, not a trigger that pushes the page live on the
+          connected CMS. Added after Day 35's walkthrough audit flagged that
+          nothing here told a first-time user that clicking "Publish" doesn't
+          actually publish anything on their real site/CMS. */}
+      <p className="mt-2 text-xs text-zinc-500 dark:text-zinc-400">
+        This tracks your team&apos;s review workflow — it doesn&apos;t publish
+        to your live site automatically.
+      </p>
 
       {error && (
         <p
           role="alert"
-          className="w-full rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800 dark:border-red-900/50 dark:bg-red-950/40 dark:text-red-300"
+          className="mt-3 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800 dark:border-red-900/50 dark:bg-red-950/40 dark:text-red-300"
         >
           {error}
         </p>

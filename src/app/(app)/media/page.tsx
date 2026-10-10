@@ -1,6 +1,10 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { getAdapterForCurrentUser, NoSiteConnectedError } from "@/lib/cms";
+import {
+  describeCmsActionFailure,
+  getAdapterForCurrentUser,
+  NoSiteConnectedError,
+} from "@/lib/cms";
 import { assessAltText } from "@/lib/images";
 import { MediaLibrary, type MediaLibraryItem } from "@/components/MediaLibrary";
 
@@ -23,7 +27,10 @@ type MediaResult =
 async function getMediaLibrary(pageSlug?: string): Promise<MediaResult> {
   try {
     const adapter = await getAdapterForCurrentUser();
-    const [pages, images] = await Promise.all([adapter.getPages(), adapter.listImages()]);
+    const [pages, images] = await Promise.all([
+      adapter.getPages(),
+      adapter.listImages(),
+    ]);
     const pageById = new Map(pages.map((page) => [page.id, page]));
 
     const items: MediaLibraryItem[] = images
@@ -32,13 +39,17 @@ async function getMediaLibrary(pageSlug?: string): Promise<MediaResult> {
         return {
           image,
           assessment: assessAltText(image),
-          page: usedOnPage ? { title: usedOnPage.title, slug: usedOnPage.slug } : null,
+          page: usedOnPage
+            ? { title: usedOnPage.title, slug: usedOnPage.slug }
+            : null,
         };
       })
       .filter((item) => !pageSlug || item.page?.slug === pageSlug);
 
     const filteredPageTitle = pageSlug
-      ? (items[0]?.page?.title ?? pages.find((page) => page.slug === pageSlug)?.title ?? pageSlug)
+      ? (items[0]?.page?.title ??
+        pages.find((page) => page.slug === pageSlug)?.title ??
+        pageSlug)
       : null;
 
     return { kind: "ok", items, filteredPageTitle };
@@ -46,10 +57,13 @@ async function getMediaLibrary(pageSlug?: string): Promise<MediaResult> {
     if (err instanceof NoSiteConnectedError) {
       redirect("/sites");
     }
-    console.error("Failed to fetch the media library from Sanity:", err);
+    console.error("Failed to fetch the media library:", err);
     return {
       kind: "error",
-      message: err instanceof Error ? err.message : "Unknown error",
+      message: describeCmsActionFailure(
+        err,
+        "Couldn't load the media library. Please try again.",
+      ),
     };
   }
 }
@@ -67,15 +81,16 @@ export default async function MediaPage({
       <div>
         <h1 className="text-3xl font-semibold tracking-tight">Media</h1>
         <p className="mt-2 text-zinc-600 dark:text-zinc-400">
-          Every image used across this site&apos;s pages, and whether its alt text
-          actually says anything.
+          Every image used across this site&apos;s pages, and whether its alt
+          text actually says anything.
         </p>
       </div>
 
       {result.kind === "ok" && result.filteredPageTitle && (
         <div className="mt-4 flex items-center justify-between gap-4 rounded-lg border border-violet-200 bg-violet-50 px-4 py-2 text-sm text-violet-800 dark:border-violet-900/50 dark:bg-violet-950/40 dark:text-violet-300">
           <span>
-            Showing images used on <span className="font-medium">{result.filteredPageTitle}</span>
+            Showing images used on{" "}
+            <span className="font-medium">{result.filteredPageTitle}</span>
           </span>
           <Link href="/media" className="shrink-0 underline hover:no-underline">
             Clear filter
@@ -85,16 +100,29 @@ export default async function MediaPage({
 
       {result.kind === "error" && (
         <div className="mt-8 rounded-lg border border-red-200 bg-red-50 p-4 text-red-800 dark:border-red-900/50 dark:bg-red-950/40 dark:text-red-300">
-          <p className="font-medium">Couldn&apos;t load the media library from Sanity.</p>
+          <p className="font-medium">Couldn&apos;t load the media library.</p>
           <p className="mt-1 text-sm opacity-80">{result.message}</p>
         </div>
       )}
 
       {result.kind === "ok" && result.items.length === 0 && (
         <div className="mt-8 rounded-lg border border-dashed border-zinc-300 p-8 text-center text-zinc-500 dark:border-zinc-700 dark:text-zinc-400">
-          {pageSlug
-            ? "No images found for this page."
-            : "No images yet. Images added to a page's content in Sanity Studio will show up here."}
+          {pageSlug ? (
+            <p>No images found for this page.</p>
+          ) : (
+            <>
+              <p>
+                No images yet — images used in your pages&apos; content will
+                show up here once you have some.
+              </p>
+              <Link
+                href="/pages"
+                className="mt-4 inline-block rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white dark:bg-white dark:text-zinc-900"
+              >
+                Go to Pages
+              </Link>
+            </>
+          )}
         </div>
       )}
 

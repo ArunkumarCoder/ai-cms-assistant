@@ -40,6 +40,21 @@ npm run dev
 
 Open [http://localhost:3000](http://localhost:3000), sign up for an account, and connect a site — a Sanity project (your own, or the demo project ID/dataset above, plus a real API token from that project's manage.sanity.io → API → Tokens) or a WordPress site (see below).
 
+## Quick start for a new user
+
+The shortest real path through the app, once you're signed in with a Site connected:
+
+1. **Sites** → a newly connected Site becomes active automatically; switch between multiple Sites from the top bar.
+2. **Pages → New page** → fill in a working title (everything else is optional) and click "Generate draft." The AI writes a title, slug, meta description, and body blocks from that brief.
+3. Review the draft, edit anything by hand, then **Save as draft** — this is the first point anything is written to your CMS.
+4. Open the saved page → the **SEO panel** scores it live as you edit and can suggest a better title/meta description ("Get AI suggestions"); accept or reject each suggested change individually.
+5. Scroll to **FAQs** → "Generate FAQs" drafts a set from the page's own content; edit, reorder, or delete before saving.
+6. **Status** → move the page through your own review workflow (draft → in review → approved → published). This is an internal label this app tracks, not a trigger that publishes anything on your actual Sanity/WordPress site.
+7. **Media** → any image used in your pages with missing or weak alt text is flagged here; generate or hand-write alt text per image, or run a batch across every flagged image at once.
+8. **Dashboard** → a Site-wide view: pages needing attention, review-state counts, and AI spend.
+
+The **Getting started** checklist on the Pages screen tracks this same path (minus step 1, since you can't reach Pages without a Site) against your actual data, and disappears once you've touched every step at least once.
+
 ## Connecting WordPress
 
 WordPress support needs one small companion file installed on the target site before connecting, since this app's custom fields (quality score, FAQs, review status, SEO meta) have no native WordPress equivalent and WordPress has no bundled way to expose them over REST without one.

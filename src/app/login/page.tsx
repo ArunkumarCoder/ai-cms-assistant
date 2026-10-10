@@ -16,7 +16,7 @@ export default function LoginPage() {
         .
       </p>
 
-      <AuthForm action={loginAction} submitLabel="Log in" />
+      <AuthForm action={loginAction} submitLabel="Log in" mode="login" />
     </div>
   );
 }

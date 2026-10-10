@@ -55,6 +55,28 @@ The shortest real path through the app, once you're signed in with a Site connec
 
 The **Getting started** checklist on the Pages screen tracks this same path (minus step 1, since you can't reach Pages without a Site) against your actual data, and disappears once you've touched every step at least once.
 
+## Run the demo
+
+Don't want to click through the quick start above by hand? One command populates a full, believable demo — a fictional small business, ten pages with deliberately varied quality (some score well, some have real SEO problems, a couple are missing alt text), every review-workflow status, and several weeks of AI spend history — with no real client data and no paid AI calls.
+
+```bash
+npm run seed:demo -- --i-know-this-is-not-prod
+```
+
+Then log in at [http://localhost:3000/login](http://localhost:3000/login) with:
+
+- **Email:** `demo@larkspur-coffee.example`
+- **Password:** `DemoPass!2026`
+
+This is a demo-only account — the password is intentionally documented here, not a secret.
+
+A few things worth knowing:
+
+- **It needs the WordPress staging site running** (`WORDPRESS_STAGING_URL` etc. in `.env.local` — see [Connecting WordPress](#connecting-wordpress) below) and a real `DATABASE_URL`. Neither needs to be paid or production — this reuses the same staging install the WordPress adapter's own tests already use.
+- **The `--i-know-this-is-not-prod` flag is required on purpose.** The script refuses to run against anything that doesn't obviously look like a local/staging/demo target (see SPEC.md §36 for the exact heuristic) and always prints exactly what it's about to touch first. If you're confident the database/WordPress site you're pointed at is fine, the flag says so explicitly — there's no way to make it proceed silently.
+- **It's idempotent** — run it as many times as you like; it converges to the same ten pages, five images, and ~62 AI call-log rows rather than duplicating anything.
+- **`npm run seed:demo -- --reset --i-know-this-is-not-prod`** wipes the demo account's own database rows (not the WordPress content itself — there's no delete in `CmsAdapter` to call, by design) and re-seeds from scratch.
+
 ## Connecting WordPress
 
 WordPress support needs one small companion file installed on the target site before connecting, since this app's custom fields (quality score, FAQs, review status, SEO meta) have no native WordPress equivalent and WordPress has no bundled way to expose them over REST without one.
@@ -79,6 +101,7 @@ See [SPEC.md §22–25](./SPEC.md) for the full content-model mapping (Gutenberg
 - `npm test` — the full Vitest suite (unit tests, the shared CmsAdapter contract suite, AI schema/validation tests — everything under `src/**/*.test.ts`, one command)
 - `npm run test:coverage` — the same suite with a coverage report (text + HTML in `coverage/`, gitignored)
 - `npm run test:a11y` — the Playwright + axe-core accessibility audit (see [Accessibility](#accessibility) below)
+- `npm run seed:demo -- --i-know-this-is-not-prod` — populate a full demo dataset (see [Run the demo](#run-the-demo) above); add `--reset` to wipe and re-seed
 
 ## Testing
 

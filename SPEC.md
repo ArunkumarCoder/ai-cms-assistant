@@ -1269,3 +1269,89 @@ All of the above is covered by the existing (and three newly-extended) Vitest su
 ### Verification
 
 `npx tsc --noEmit`, `npm run lint`, `npm test` (493 tests, up from 479), `npm run test:a11y` (4 passed / 4 skipped — same screens as Day 33/34, still clean), and `npx next build` all pass after every change above. Two of the new UI changes (the signup password hint, the CMS-neutral connect-a-Site heading) were additionally confirmed live via Playwright screenshots, not just by reading the JSX.
+
+## 32. Phase 8 Begins: Demo Dataset and Seed Script (Day 36)
+
+Goal: `npm run seed:demo` gets anyone — a recruiter, a hiring manager, a fresh clone on a new machine — from nothing to a fully populated, believable demo, with no real client data and no manual clicking.
+
+### Which CMS the demo actually targets
+
+The demo needs a *real* connected Site, written through a real `CmsAdapter` — not a mock. That rules out Sanity today: `SANITY_API_TOKEN` isn't set in this environment's `.env.local` (confirmed, not assumed — the same gap Day 33/34/35's own automated-audit sections already documented). WordPress, on the other hand, already has a fully real, already-authorized staging install this project has used since Day 27 (`WORDPRESS_STAGING_URL`/`_USERNAME`/`_APPLICATION_PASSWORD`, all populated) — its companion mu-plugin, local MySQL, and PHP were all already in place, just not currently running. Starting it (`php -S localhost:8890` from `ai-cms-assistant-wp/`, matching its own existing server log) was enough to make it reachable again — no new external resource was created for this.
+
+This means the demo is WordPress-backed, not Sanity-backed. Two consequences worth being explicit about:
+
+- Reusing an *existing* local resource this project already set up for itself (rather than creating a new cloud project) kept this entirely local and zero-cost — no new Sanity project/token was requested or generated for this task.
+- The staging site already had a few unrelated leftover pages from earlier adapter-development testing (`ai-powered-content-assistant-for-wordpress-2`, `how-to-write-seo-friendly-meta-descriptions`, a `New Client Onboarding Checklist` draft). The seed script never touches, counts, or deletes anything without a `demo-` slug — these three show up alongside the ten real demo pages in every screenshot below, exactly as a real multi-author site would mix content from different sources, and that's left alone on purpose.
+
+### The fictional business
+
+"Larkspur Coffee Roasters" — a small, fictional specialty coffee roaster. Not a real company. One consistent brand voice across all ten pages (`src/lib/seed/demoContent.ts`'s own `DEMO_BRAND` constant documents it: warm, specific, never generic filler) — written as real marketing copy, not placeholder Lorem Ipsum, so the demo reads like an actual client rather than an obviously synthetic fixture.
+
+Ten pages (task's 8-12 range), each slug fixed and `demo-`-prefixed:
+
+| Page | Type | Status | Deliberate quality |
+|---|---|---|---|
+| Home | landing | published | scores well |
+| Our Story (About) | other | published | scores well |
+| Monthly Coffee Subscription | service | **approved** | scores well |
+| Wholesale | service | **in-review** | no meta description, no target keyword; image missing alt text |
+| Single-Origin Beans | service | **draft** | weak/generic title, thin content, no FAQs |
+| Sourcing Story | blog | published | heading skips H2 → H4 |
+| Pour-Over Guide | blog | published | no target keyword; image missing alt text |
+| Holiday Gift Sets | landing | published | thin content, no FAQs |
+| Sustainability | other | published | — |
+| Contact | other | published | — |
+
+All four workflow statuses are represented at least once (task item 1's explicit requirement); every "deliberate problem" is a different one, not the same issue repeated four times. `src/lib/seed/demoContent.test.ts` asserts this variety against the *real* `computeQualityScore`/`analyzeSeoContent` functions, not hand-asserted numbers — e.g., it directly confirms the sourcing-story page's heading skip actually fails `headingHierarchy`, and that 2-3 pages score ≥80 while 3-4 score <70. If someone edits the content later and accidentally makes a "problem" page start scoring well, this test catches it instead of the demo quietly losing its own contrast.
+
+Images are generated, not fetched or copyrighted — `src/lib/seed/placeholderImage.ts` hand-encodes real, valid PNGs (solid color field + contrasting stripe) using only Node's built-in `zlib` for DEFLATE, no image library and no external asset. Five colors are reused across the ten pages' seven image placements where a page's own "good" or "missing" alt-text intent doesn't conflict (see the per-attachment gotcha below); a sixth, `pourover`, exists specifically *because* of that gotcha.
+
+### A real gap this surfaced, not something the task anticipated
+
+Two bugs were found only by actually running this against the live app, not by reading code:
+
+1. **WordPress tracks alt-text review status per *attachment*, not per page-usage.** The original content reused one image ("latte") for both a "good, reviewed" page (About) and a "deliberately missing alt text" page (Pour-Over Guide) — since both referenced the *same* WordPress media id, they couldn't both be true at once; whichever was written last silently won, and the task's "exactly 2 pages with missing alt text" requirement landed on the wrong pages. Fixed by giving Pour-Over Guide its own dedicated, never-shared image rather than trying to represent two conflicting intents on one attachment.
+2. **Next.js 16 added a second check beyond `remotePatterns`.** `next.config.ts` already allow-lists `localhost:8890` for exactly this WordPress host, but Next 16's image optimizer separately resolves the hostname and refuses private IPs (`127.0.0.1`/`::1`) outright — so every WordPress-hosted image silently failed to load in the actual running app, invisible to every previous day's work because nothing had rendered a real page's real image through a real browser before. Fixed with `images.dangerouslyAllowLocalIP: true` — read `node_modules/next/dist/docs/01-app/03-api-reference/02-components/image.md` first, per `AGENTS.md`; the doc's own SSRF warning is about proxying *untrusted* hosts on a local network, which doesn't apply here since `remotePatterns` already pins the one host this ever requests.
+3. A smaller, related gap: `WordPressAdapter`'s `usedOnPageIds` reads an attachment's upload-time *parent post*, not a scan of which page's content actually embeds it — every seed-uploaded image initially showed "used on an unknown page" in the Media Library, since the raw upload call never set a parent. Fixed by setting each attachment's parent post explicitly once its referencing page exists (`attachMediaToPost`, `src/lib/seed/wordpressMedia.ts`) — the one place this can't be fully accurate is the one image reused across two pages, where only the page processed last gets the attribution; a known, minor, documented limitation of a one-parent-per-attachment field, not a bug.
+
+### Writing through the real layers
+
+Every content write goes through the real `WordPressAdapter`, wrapped in the same `withQualityScoring` the live app's own `resolveAdapter.ts` uses — constructed directly in the seed script rather than imported from `resolveAdapter.ts` itself, because that file imports the `server-only` sentinel package (no implementation outside Next's bundler, the same reason `resolveAdapter.test.ts` needs to mock it — a standalone `tsx` script has the identical problem). This means every page's `qualityScore` is computed by the exact same deterministic function `SeoPanel` calls live, and every save writes a real `QualityScoreHistory` row, automatically, for free.
+
+Status is reached by **simulating the real review workflow**, not by writing a target status directly: `resolvePageStatusTransition` (the same function `transitionPageStatusAction.ts` and `PageStatusPanel.tsx` both already use) drives `draft → in-review → approved → published` one legal step at a time, each step backdated a few days further into the past than the last and recorded as a real `PageAuditLogEntry` — so a published page's History panel shows a believable multi-step trail, not a single "created, already published" entry.
+
+The one write with no `CmsAdapter` method to call at all is uploading a brand-new media attachment — `createPage`/`updatePage` image blocks already require an *existing* attachment id to reference (`wordpressAdapter.ts`'s own `resolveImageSrc`), the same way a human has to upload a photo through wp-admin before referencing it in a post. `src/lib/seed/wordpressMedia.ts` makes that one necessary raw REST call; every other write — pages, FAQs, alt text, status — goes through the adapter, same as the rest of the app.
+
+### Idempotency
+
+Every piece of seeded state has a fixed, deterministic identity, and every write is an upsert keyed on it:
+
+- **Pages**: looked up by their fixed `demo-` slug first (`src/lib/seed/upsertPage.ts`'s `upsertDemoPage`); `createPage` only runs when nothing's there yet, `updatePage` otherwise. `upsertPage.test.ts` asserts this directly against a fake `CmsAdapter` — including a test that calls the same upsert twice in a row and asserts `createPage` ran exactly once.
+- **Images**: looked up by a fixed, recognizable title ("Demo: Roast Bag Hero") before ever uploading (`findOrUploadDemoMedia`) — re-running reuses the same attachment id rather than uploading a duplicate file.
+- **AI call-log rows**: each of the ~62 backfilled rows has a fixed id (`demo-aicalllog-<day>-<index>`) and is `upsert()`'d, not `create()`'d — re-running converges to the same rows rather than appending more. The whole backfill is also fully deterministic (`src/lib/seed/demoCallLog.ts`'s own seeded PRNG, not `Math.random()`) — same `baseDate` in, byte-identical rows out, asserted directly in `demoCallLog.test.ts`.
+- **Page audit log entries**: same pattern, `demo-audit-<slug>-<step>`, upserted.
+
+Verified live, not just by the unit tests: ran `npm run seed:demo -- --i-know-this-is-not-prod` twice in a row against the real staging site and dev database. First run: "10 created, 0 updated," 5 images uploaded. Second run: "0 created, 10 updated," all 5 images reused (no new uploads), identical 62 call-log rows. Queried the WordPress REST API directly afterward to confirm exactly 10 `demo-`-prefixed pages and exactly 5 (then 6, after the alt-text-collision fix added a dedicated image) `"Demo:"`-titled attachments exist — not 20 and not 10.
+
+### `--reset`
+
+`npm run seed:demo -- --reset` deletes the demo Postgres `User` (cascading its `Site`), plus every `AiCallLog`/`PageAuditLogEntry`/`QualityScoreHistory` row scoped to that Site's id (these three are *deliberately not* cascade-linked to Site — SPEC.md §20's own design note on why historical cost/audit data shouldn't vanish just because a Site is removed — so `--reset` deletes them explicitly rather than relying on a cascade that doesn't exist), then re-seeds from scratch with fresh ids.
+
+One honest limitation: `CmsAdapter` has no `deletePage` method at all — consistent with this whole codebase's "never auto-delete" posture, and not something today's task should add just for a seed script's reset flag. So `--reset` cannot and does not delete the WordPress-side pages/images themselves; it wipes the *app's own* bookkeeping and re-converges the same CMS content via the same idempotent upserts described above. Verified live: a `--reset` run produced a brand-new demo `User`/`Site` id pair, while the ten WordPress pages came back as "0 created, 10 updated" (the content itself was never gone) and all five already-uploaded images were found and reused by title rather than re-uploaded.
+
+### The safety guard
+
+`src/lib/seed/safety.ts`'s `checkSeedTargetSafety` — pure, synchronous, no env reads or network calls, directly unit-tested (`safety.test.ts`, 8 cases). Checks the `DATABASE_URL` and the WordPress target URL against two keyword lists: an explicit `RISKY_MARKERS` list (`prod`, `production`, `live`) that always blocks regardless of anything else, and a `SAFE_MARKERS` list (`localhost`, `127.0.0.1`, `.local`, `staging`, `demo`, `dev`, `test`) that clears a target with no override needed. **A target matching neither list is treated as risky, not safe** — deliberately conservative, since there's no way to prove a generic-looking connection string is safe from its shape alone. This means this project's own real dev database (`db.prisma.io`, a hostname with no marker either way) requires `--i-know-this-is-not-prod` on every run in this environment — not a false positive to work around, but the exact scenario the flag exists for: a human consciously confirming "yes, this one's fine" rather than the script silently assuming it.
+
+"Print what it will touch before doing so" happens unconditionally, before the safety check even runs — the database host (credentials and query-string values redacted via `redactTarget`), the WordPress URL and username (password never printed at all, since it's never embedded in a URL to redact), and the demo account email. A refusal prints *why* each flagged target was flagged and the exact flag to add; proceeding with the override still prints what was flagged, so an override is always an informed one, never a silent bypass.
+
+### Known limits
+
+- `--reset` cannot delete WordPress-side content (`CmsAdapter` has no delete method anywhere) — see above.
+- The one image shared between two "good" pages (`roast`, used by Home and Sustainability) can only show "used on" one of them in the Media Library, a one-parent-per-attachment limitation, not a bug — see the gap #3 above.
+- Repeated seed runs add additional `QualityScoreHistory` rows (one per page per run) rather than converging to one — `withQualityScoring`'s `recordHistory` call is a plain `create()`, matching the real app's own behavior (every real save legitimately adds a new history entry), not something seeding-specific was built to dedupe. Harmless: the *current* score shown everywhere stays correct and identical across runs; nothing in this app's UI currently surfaces a score-history trend that repeated identical entries would visibly clutter.
+- The safety guard is a heuristic over a connection string's text, not a real environment-identity check — it cannot, for example, detect that two different-looking hostnames both point at the same actual database.
+
+### Verification
+
+`npx tsc --noEmit`, `npm run lint`, `npm test` (532 tests, up from 493 — 47 new: safety×8, placeholderImage×4, demoContent×8, demoCallLog×8, upsertPage×5, wordpressMedia×6, each file listed above), `npm run test:a11y` (4 passed / 4 skipped, unchanged — this suite's own fixture account is Sanity-based and separate from the WordPress demo account), and `npx next build` all pass. The full demo was additionally walked live via Playwright screenshots (not just unit tests) across the Dashboard, Pages list, the lowest-scoring page ("Beans," 40/100, every deliberate problem correctly flagged by the real SEO checklist), and the Media Library — confirmed each shows real, varied, believable data, not placeholders.

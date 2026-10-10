@@ -18,6 +18,17 @@ const nextConfig: NextConfig = {
         port: "8890",
       },
     ],
+    // Next 16 added a second, independent check on top of `remotePatterns`:
+    // the image optimizer resolves the hostname and refuses anything that
+    // comes back as a private/local IP, even one already allow-listed above
+    // — "localhost" resolves to 127.0.0.1/::1, so every image on the
+    // WordPress staging site above was silently failing to load (discovered
+    // Day 36, seeding a real demo through it for the first time). The doc's
+    // own SSRF warning is about proxying *untrusted* local-network hosts;
+    // this app already pins the one local host it will ever fetch images
+    // from via `remotePatterns`, so there's no additional host this opens up
+    // — it only unblocks the one already explicitly allow-listed.
+    dangerouslyAllowLocalIP: true,
   },
 };
 

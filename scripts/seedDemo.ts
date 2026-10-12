@@ -39,14 +39,10 @@ import {
   resolvePageStatusTransition,
   type PageStatusAction,
 } from "../src/lib/pages/pageStatusTransitions";
-import { DEMO_USER_EMAIL } from "../src/lib/demoAccount";
+import { DEMO_USER_EMAIL, DEMO_USER_PASSWORD } from "../src/lib/demoAccount";
 import type { ContentBlock, PageStatus } from "../src/types";
 
 loadEnvLocal();
-
-// Documented in README.md's "Run the demo" section — not a secret, since
-// this account only ever touches fake demo content on the staging site.
-const DEMO_USER_PASSWORD = "DemoPass!2026";
 const DEMO_SITE_NAME = "Larkspur Coffee Roasters (Demo)";
 
 const STATUS_ACTION_PATH: Record<PageStatus, PageStatusAction[]> = {

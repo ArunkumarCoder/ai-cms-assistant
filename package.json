@@ -2,6 +2,7 @@
   "name": "ai-cms-assistant",
   "version": "0.1.0",
   "private": true,
+  "license": "MIT",
   "scripts": {
     "postinstall": "prisma generate",
     "dev": "next dev",
@@ -13,7 +14,8 @@
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
     "test:a11y": "playwright test",
-    "seed:demo": "tsx scripts/seedDemo.ts"
+    "seed:demo": "tsx scripts/seedDemo.ts",
+    "demo:shots": "playwright test e2e/demoShots.spec.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.126.0",

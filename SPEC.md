@@ -1433,3 +1433,46 @@ See the chat response for the full list — summarized here for the record: crea
 ### Verification
 
 `npx tsc --noEmit`, `npm run lint`, `npm test` (578 tests, up from 532 — 46 new across `env.test.ts`, `spendCap.test.ts`, `rateLimit.test.ts`, `actions.test.ts`, `route.test.ts`), `npm run test:a11y` (4 passed / 4 skipped, unchanged), and `npx next build` all pass. Beyond the automated suites: a real `next start` production server was checked directly over `curl` for its actual response headers (confirming the CSP/security headers and the dev-vs-production `'unsafe-eval'` split both work as designed) and `/api/health`'s real response against the live dev database and Sanity project — the CSP hydration bug above was caught exactly this way, not by the test suites alone.
+
+## 34. Demo Assets and Portfolio Polish (Day 38)
+
+Phase 8 closes: everything needed to record a demo video and present the project on GitHub/a portfolio/LinkedIn without improvising on camera, without touching any app code (this day is assets and documentation only).
+
+### Demo script
+
+[`docs/demo/script.md`](./docs/demo/script.md) — a shot-by-shot ~2.5 minute script against the Day 36 seeded "Larkspur Coffee Roasters" account: dashboard health queue → lowest-scoring page → AI suggestion diff (accept one, reject one) → score rising + save → generate a page from a brief → FAQ generation + JSON-LD → Media Library batch alt text → Cost & Usage dashboard → a closing line on the CMS-agnostic adapter and multi-provider AI layer. A table marks exactly which of the ten beats make a real AI call (4 of them — suggestions, page generation, FAQ generation, alt text) versus reading only seeded data, each live beat with its own fallback if the call is slow or fails, plus a pre-flight checklist (fresh seed, restart the server to clear the in-memory AI cache, confirm spend-cap headroom, window size, OS/browser chrome).
+
+### Screenshots
+
+`npm run demo:shots` (new script, `e2e/demoShots.spec.ts`) — a Playwright spec, not a manual process, so the same eight shots can be regenerated identically after any future UI change. Logs in as the seeded demo account, fixed 1440×900 viewport (375×800 for the one mobile shot), and captures: dashboard, cost dashboard, page editor (SEO panel + SERP preview), quality score breakdown, FAQ editor, media library, and a mobile-width pages list — seven files, all reading only pre-baked seed data, zero live AI calls, safe and free to re-run any number of times.
+
+The eighth shot — the AI suggestion diff view — is a genuine exception to "no live calls," not an oversight: `DiffView`'s suggestion state only ever exists in React state after a real AI response, never persisted (this app's own "never auto-save" principle, same reasoning as the diff/accept-reject design itself), so there is no seeded data that could stand in for it. Rather than silently making every `demo:shots` run cost money and depend on provider latency, that one test is opt-in — skipped, not failed, unless `DEMO_SHOTS_WITH_LIVE=1` is set — so the default run stays what the task asked for ("must work with only pre-baked data") while the shot remains one environment variable away when actually recording.
+
+Demo credentials (`DEMO_USER_EMAIL`/`DEMO_USER_PASSWORD`) moved from a local constant inside `scripts/seedDemo.ts` into `src/lib/demoAccount.ts`, so the new screenshot spec can import the same values instead of re-declaring them — one source of truth, not two that could drift.
+
+[`docs/demo/screenshot-guide.md`](./docs/demo/screenshot-guide.md) maps each of the eight shots to where it's actually used — README hero vs. feature screenshot vs. LinkedIn carousel — plus a suggested 3-image LinkedIn post structure, so pasting the right image in the right place doesn't require re-deciding it each time.
+
+### README restructured as a landing page
+
+The top of [README.md](./README.md), reordered so a stranger understands the project in well under a minute without scrolling: a one-line pitch, the dashboard screenshot as a hero image, a live-demo-link placeholder plus the demo login, a five-item feature list (SEO scoring, quality scoring, FAQ generation, media/alt text, cost & usage) each with its own screenshot, a Mermaid architecture diagram (UI → Server Actions → `CmsAdapter`/`AiClient`, with the AI side's routing/cache/rate-limit/spend-cap/logging all shown explicitly), the existing tech stack list, and an honest "What I'd do next" section pulled directly from the "What's deliberately left out" notes Days 34–37 already wrote, not invented fresh. Every existing section (Status, Getting started, Quick start, Run the demo, Deploying, Connecting WordPress, Scripts, Testing, Accessibility, Performance, Project structure, Sanity Studio) stays exactly where its content already was — this was a reorder of what leads, not a rewrite or a deletion of anything.
+
+Every internal anchor link (`#run-the-demo`, `#quick-start-for-a-new-user`, `#connecting-wordpress`) and every screenshot path was checked against the actual file tree after the move, not assumed — the old `## Stack` section was renamed `## Tech stack` in place during the reorder, and grepped first to confirm nothing elsewhere in the repo linked to `#stack` by its old anchor.
+
+### Repo polish
+
+- **`LICENSE`** — MIT, the standard choice for a portfolio project with no stated reason to restrict reuse.
+- **`CONTRIBUTING.md`** — short: how to report a bug, how to send a PR (the same four commands CI runs), and the two or three conventions worth stating explicitly (new CMS behavior goes through `CmsAdapter`, new AI behavior goes through the AI client, structured AI output gets a Zod schema).
+- **[`docs/demo/github-metadata.md`](./docs/demo/github-metadata.md)** — copy-paste source for the repo's GitHub "About" description and topics, since neither can be set from a committed file; also documents where the eventual social preview image gets uploaded.
+- **[`docs/demo/social-preview-spec.md`](./docs/demo/social-preview-spec.md)** — a written spec (1280×640, dimmed dashboard screenshot background + title/subtitle overlay), not a finished image — compositing a polished social-preview graphic is a ten-minute manual design task, not something worth faking with a placeholder PNG that would need replacing anyway.
+- **Secret/PII/path scan**: `git grep` across every tracked file plus `git log --all -S<pattern>` (pickaxe) across the full history for common API-key prefixes (`sk-proj-`, `sk-ant-`, `gsk_`, `AIza`, PEM headers) and for email/absolute-Windows-path patterns. **Zero real secrets, zero real personal emails in file content, zero absolute Windows paths, in either the current tree or history.** The one thing the scan did surface — git commit *authorship* metadata (not file content) carries the repo owner's real email — is normal, expected git behavior, not a leak to remediate; GitHub's "keep my email address private" setting plus its generated `@users.noreply.github.com` address is available if that's ever unwanted, but no destructive history rewrite was performed or considered necessary.
+
+### What's deliberately left out
+
+- **Three leftover non-demo WordPress test pages** (ids 10–12, pre-existing artifacts from earlier WordPress-adapter development, not real or demo content) still show up in the dashboard screenshot's "Needs attention" list. The fix — soft-deleting them via WordPress's own `trash` status, the same kind of outside-`CmsAdapter` REST call already used for Day 36's media-attach step — was attempted and blocked by this environment's own tool-permission system; see the chat response for the exact ask. The screenshots already captured are unaffected in substance (the feature being demonstrated is unchanged) and were not re-captured over this.
+- **No actual social preview image was produced**, only its spec — see "Repo polish" above.
+- **No video was recorded.** Recording, voice-over, and uploading are manual by nature — the script, fallbacks, and pre-flight checklist exist specifically so none of that requires improvising.
+- **GitHub repo settings (About description, topics, social preview upload) were not set** — none of these can be set from a commit; `github-metadata.md` holds the copy-paste source for doing it by hand.
+
+### Verification
+
+`npm run lint`, `npm test`, `npx next build`, and `npm run demo:shots` (7 of 8 shots produced; the 8th, opt-in live-AI diff-view shot, correctly skipped with no `DEMO_SHOTS_WITH_LIVE` set) all pass — see the chat response for exact output/counts from this run. Every screenshot was also opened and visually checked, not just confirmed to exist on disk.

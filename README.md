@@ -1,14 +1,62 @@
 # AI CMS Assistant
 
-An AI-powered content assistant for CMSs — generate pages from a brief, score SEO, write image alt text, and draft FAQs with schema markup. Sanity is the primary, fully-supported CMS; WordPress is a second `CmsAdapter` implementation (REST API + Application Passwords) proving the adapter boundary holds up against a second, very different backend — see [Connecting WordPress](#connecting-wordpress) below. AI calls run behind a provider-agnostic interface backed by OpenAI, Claude (Anthropic), and Groq.
+**An AI-powered content assistant for CMSs — generate pages from a brief, score SEO and quality, write image alt text, and draft FAQs with schema markup, through one adapter interface that works against Sanity today and WordPress as a second, very different backend.**
 
-See [SPEC.md](./SPEC.md) for the full product spec, data model, day-by-day build log, and the WordPress adapter's own known-limitations section (§25).
+![Dashboard: health queue, quality scores, and needs-attention list](./docs/demo/screenshots/dashboard.png)
 
-## Status
+**🔗 Live demo:** `<!-- paste your deployed URL here once you've followed Deploying below, e.g. https://ai-cms-assistant.vercel.app -->` — log in with `demo@larkspur-coffee.example` / `DemoPass!2026` (a demo-only account, not a secret — see [Run the demo](#run-the-demo)).
 
-Phases 1–5 (Sanity: content model, AI generation/SEO/alt-text/FAQs, review workflow, dashboards, provider resilience) are complete and exercised end to end. Phase 6 added a second CMS: a WordPress `CmsAdapter` implementing the full read/write contract (REST API + Application Passwords + a small companion mu-plugin for custom fields), verified against a real WordPress install through the same unmodified screens and AI features Sanity uses — see SPEC.md §22–26 for the full build log, including real bugs found and fixed along the way (one of which, a `withQualityScoring` defect, affected Sanity too). Phase 7 (testing and polish) is underway: every structured AI response is now schema-validated with a shared, bounded retry policy (SPEC.md §27), and both `CmsAdapter` implementations share one contract test suite plus failure-path coverage with CI running on every push (SPEC.md §28, below).
+See [SPEC.md](./SPEC.md) for the full product spec, data model, and day-by-day build log.
 
-## Stack
+## What it does
+
+- **SEO scoring with AI suggestions.** A live checklist (title/meta length, keyword density, heading structure, readability) scores every page as you type, with a real SERP preview. "Get AI suggestions" proposes a better title/meta grounded in the page's own content — each one previewed as an explicit accept/reject diff, never auto-applied.
+
+  ![SEO panel with a 100/100 passing checklist and SERP preview](./docs/demo/screenshots/page-editor.png)
+
+- **Quality scoring with specific, actionable findings.** Every save computes an overall score plus SEO/readability/structure sub-scores — not a vague "needs improvement," but "title is 5 characters, aim for 30–60."
+
+  ![A 40/100 page with red/amber sub-scores and specific findings](./docs/demo/screenshots/quality-score.png)
+
+- **FAQ generation with automatic JSON-LD.** Drafts FAQs from a page's own body content (no invented facts), editable and reorderable, and renders the same data as `FAQPage` JSON-LD automatically — no separate markup step.
+
+  ![FAQ editor with manual and generated entries](./docs/demo/screenshots/faq-editor.png)
+
+- **Media library with batch alt-text generation.** Flags every image with missing or weak alt text across a site's pages; generate and review suggestions one at a time or as a batch — vision calls are the priciest in the app, which is exactly why they're reviewed, not auto-applied.
+
+  ![Media library with three flagged images and a batch-generate button](./docs/demo/screenshots/media-library.png)
+
+- **Cost & usage tracking with a hard spend cap.** Every AI call is logged — provider, cost, success or failure — with a global monthly spend cap and per-user daily call caps checked *before* any provider (including a fallback) is reached, so a capped call can never slip through.
+
+  ![Cost dashboard: total spend, per-provider/per-feature breakdown, a logged fallback](./docs/demo/screenshots/cost-dashboard.png)
+
+A new page can also be generated whole from a one-line working title (everything else optional) — see [Quick start for a new user](#quick-start-for-a-new-user) below.
+
+## Architecture
+
+```mermaid
+flowchart LR
+    UI["Next.js UI<br/>(App Router)"] --> SA["Server Actions"]
+
+    SA --> CMS["CmsAdapter<br/>interface"]
+    CMS --> Sanity["SanityAdapter"]
+    CMS --> WP["WordPressAdapter"]
+
+    SA --> AI["AiClient<br/>interface"]
+    AI --> Routing["Provider routing<br/>+ fallback"]
+    AI --> Cache["Response cache<br/>(TTL + LRU, per deterministic call type)"]
+    AI --> RL["Rate limiter"]
+    AI --> Cap["Spend cap<br/>(monthly $ + daily calls)"]
+    AI --> Log["AiCallLog<br/>(cost, provider, success/fail)"]
+
+    Routing --> OpenAI["OpenAI"]
+    Routing --> Claude["Anthropic (Claude)"]
+    Routing --> Groq["Groq"]
+```
+
+The content layer is CMS-agnostic: one `CmsAdapter` interface (`src/lib/cms`), with `SanityAdapter` as the primary implementation and `WordPressAdapter` proving the same contract holds against a second, structurally different backend (REST + Application Passwords vs. GROQ queries). Both share one contract test suite (SPEC.md §28). The AI layer is the same idea — one interface (`src/lib/ai`) in front of three providers, with routing, an in-memory response cache, rate limiting, a hard spend cap checked before any call (including a fallback) goes out, and every call logged for the Cost & Usage dashboard.
+
+## Tech stack
 
 - [Next.js](https://nextjs.org) 16 (App Router, TypeScript, `src/` directory)
 - [Tailwind CSS](https://tailwindcss.com) 4
@@ -17,6 +65,20 @@ Phases 1–5 (Sanity: content model, AI generation/SEO/alt-text/FAQs, review wor
 - AI providers: OpenAI, Anthropic (Claude), Groq — behind a single adapter interface in `src/lib/ai`
 - Auth: [NextAuth (Auth.js v5)](https://authjs.dev), Credentials (email/password) — see SPEC.md §8
 - App datastore: [Prisma](https://www.prisma.io) + Postgres (accounts + connected Sites)
+
+## What I'd do next
+
+Honest gaps, not hidden ones — each is written up in more depth in SPEC.md's "What's deliberately left out" for the day that found it:
+
+- **Move the AI rate limiter and response cache off in-memory, per-server-instance storage** onto a shared store (Redis/Vercel KV). The cache's per-instance nature is a pure missed optimization; the rate limiter's is a real, if bounded, correctness gap under concurrent serverless scale-out — accepted for this project's actual scale, not for a higher-traffic deployment.
+- **Make `seed:demo` Sanity-native.** It currently only writes through `WordPressAdapter`, so running the demo today needs a reachable WordPress install even though Sanity is the primary adapter.
+- **Nonce-based CSP** instead of the current static `'unsafe-inline'` policy — stronger against a successful script injection, at the cost of forfeiting static rendering on every route, which this project's threat model didn't justify yet.
+- **A real multi-tenant image-optimizer allowlist** for WordPress Sites — today's `next.config.ts` `remotePatterns` is scoped to one dev/staging host, not "any host a future connected Site might use."
+- **Automated accessibility coverage for the four screens that need a live Sanity project** (pages list, page editor, Media Library, dashboard) — they currently auto-skip in CI without real Sanity credentials, covered instead by a manual keyboard/screen-reader/contrast pass.
+
+## Status
+
+Phases 1–5 (Sanity: content model, AI generation/SEO/alt-text/FAQs, review workflow, dashboards, provider resilience) are complete and exercised end to end. Phase 6 added a second CMS: a WordPress `CmsAdapter` implementing the full read/write contract (REST API + Application Passwords + a small companion mu-plugin for custom fields), verified against a real WordPress install through the same unmodified screens and AI features Sanity uses — see SPEC.md §22–26 for the full build log, including real bugs found and fixed along the way (one of which, a `withQualityScoring` defect, affected Sanity too). Phase 7 (testing and polish) added schema-validated AI responses with a shared retry policy, a shared `CmsAdapter` contract test suite, accessibility and performance passes, and a first-time-user walkthrough (SPEC.md §27–31). Phase 8 (launch) added a realistic seeded demo dataset, a first production deployment (Vercel + Prisma Postgres + Sanity, with security headers, spend caps, and a health check), and this demo/portfolio pass (SPEC.md §32–34).
 
 ## Getting started
 

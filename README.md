@@ -77,6 +77,56 @@ A few things worth knowing:
 - **It's idempotent** — run it as many times as you like; it converges to the same ten pages, five images, and ~62 AI call-log rows rather than duplicating anything.
 - **`npm run seed:demo -- --reset --i-know-this-is-not-prod`** wipes the demo account's own database rows (not the WordPress content itself — there's no delete in `CmsAdapter` to call, by design) and re-seeds from scratch.
 
+## Deploying
+
+Deploys to [Vercel](https://vercel.com), with its own production Postgres database and Sanity dataset, separate from dev's. Full design reasoning — the audit that drove this, the security headers, the spend caps — is in [SPEC.md §37](./SPEC.md). This section is just the steps.
+
+### 1. Create the Vercel project
+
+Connect this repo to a new Vercel project (Vercel auto-detects Next.js — no build command override needed beyond what's already in [`vercel.json`](./vercel.json), which runs database migrations as part of the build).
+
+### 2. Provision production infrastructure
+
+- **Database**: a separate Postgres database from whatever dev uses — e.g. a second "Prisma Postgres" instance via Vercel's own marketplace integration (Storage tab → Create Database), or any other Postgres provider.
+- **Sanity dataset**: a dataset separate from dev's, in the same Sanity project (`manage.sanity.io` → your project → Datasets → Create dataset). **Check what dev's `NEXT_PUBLIC_SANITY_DATASET` is actually set to first** — don't reuse that same name for production, or the two environments will silently share content.
+
+### 3. Set environment variables
+
+In the Vercel project's Settings → Environment Variables, scoped to Production. Every variable `src/lib/env.ts` validates at startup is required unless marked optional; the app refuses to boot with a specific, readable error naming whichever one is missing or malformed.
+
+| Variable | Notes |
+|---|---|
+| `DATABASE_URL` | The production database from step 2. |
+| `AUTH_SECRET` | Generate a **fresh** one for production: `openssl rand -base64 32`. Never reuse dev's. |
+| `SITE_TOKEN_ENCRYPTION_KEY` | Generate a **fresh** one: `openssl rand -base64 32`. Never reuse dev's — this encrypts every connected Site's stored credentials. |
+| `NEXT_PUBLIC_SANITY_PROJECT_ID` | Same project as dev (`nrk18555`, or your own). |
+| `NEXT_PUBLIC_SANITY_DATASET` | The **production** dataset from step 2 — not dev's. |
+| `SANITY_API_TOKEN` | Optional — only needed if the app's own Sanity reads should use a token rather than being anonymous/public. |
+| `OPENAI_API_KEY`, `GROQ_API_KEY`, `ANTHROPIC_API_KEY` | Your own keys. All optional at startup (each provider checks lazily, on first real use) but functionally required for the AI features to work at all. |
+| `AI_MONTHLY_SPEND_CAP_USD`, `AI_DAILY_CALL_CAP`, `AI_DAILY_CALL_CAP_DEMO` | Optional — override the built-in spend-cap defaults ($20/month global, 40/day per real account, 8/day for the demo account). See SPEC.md §37. |
+| `WORDPRESS_STAGING_URL`, `_USERNAME`, `_APPLICATION_PASSWORD` | Only needed if you'll run `seed:demo` against production (step 5) — point these at a real, internet-reachable WordPress install, not `localhost`. |
+
+### 4. Deploy
+
+Push to the branch Vercel is watching (or trigger a deploy from its dashboard). The build runs `prisma migrate deploy` before `next build` ([`vercel.json`](./vercel.json)) — migrations apply automatically, every deploy, including the very first one against an empty database.
+
+### 5. Seed the demo account
+
+Once deployed, run the seed script locally with production's `DATABASE_URL` (and `WORDPRESS_STAGING_*`, if using WordPress for the production demo — see the caveat below) in your shell:
+
+```bash
+DATABASE_URL="<production-url>" npm run seed:demo -- --i-know-this-is-not-prod
+```
+
+This creates (or converges) **only** the demo account and its sample Site/pages — it never wipes or touches anything else in the database. Add `--reset` only if you specifically want to wipe and re-create the demo account's own data.
+
+> **Caveat**: `seed:demo` currently writes through `WordPressAdapter` only (Day 36) — it needs a real, reachable WordPress install, not a Sanity one, regardless of what `NEXT_PUBLIC_SANITY_DATASET` production otherwise uses for real users' own connected Sites. See SPEC.md §37's "What's deliberately left out" for why, and what a Sanity-native version of the seed script would need.
+
+### 6. Verify
+
+- `https://<your-domain>/api/health` should return `{"status":"ok",...}` with a 200.
+- Log in as the demo account (same credentials as [Run the demo](#run-the-demo) above) and confirm the Dashboard, Pages, and Media Library all show real data.
+
 ## Connecting WordPress
 
 WordPress support needs one small companion file installed on the target site before connecting, since this app's custom fields (quality score, FAQs, review status, SEO meta) have no native WordPress equivalent and WordPress has no bundled way to expose them over REST without one.

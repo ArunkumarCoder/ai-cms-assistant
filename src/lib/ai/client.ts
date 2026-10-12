@@ -7,6 +7,7 @@ import { logAiCall } from "./logging";
 import { waitForRateLimitSlot } from "./rateLimit";
 import { AiValidationError, appendValidationFeedback } from "./validation";
 import { aiResponseCache, buildAiCacheKey, isCacheableCallType } from "./cache";
+import { assertWithinSpendCap } from "./spendCap";
 import type {
   AiCallType,
   AiProviderName,
@@ -66,8 +67,14 @@ export const aiClient = {
     schema: z.ZodType<T>,
     options?: GenerateOptions,
   ): Promise<AiStructuredResult<T>> =>
-    runValidatedWithCache(callType, prompt, schema, options, undefined, (provider, p, jsonSchema) =>
-      provider.generateStructured<unknown>(p, jsonSchema, options),
+    runValidatedWithCache(
+      callType,
+      prompt,
+      schema,
+      options,
+      undefined,
+      (provider, p, jsonSchema) =>
+        provider.generateStructured<unknown>(p, jsonSchema, options),
     ),
 
   generateWithVision: <T>(
@@ -77,8 +84,14 @@ export const aiClient = {
     schema: z.ZodType<T>,
     options?: GenerateOptions,
   ): Promise<AiStructuredResult<T>> =>
-    runValidatedWithCache(callType, prompt, schema, options, imageUrl, (provider, p, jsonSchema) =>
-      provider.generateWithVision<unknown>(p, imageUrl, jsonSchema, options),
+    runValidatedWithCache(
+      callType,
+      prompt,
+      schema,
+      options,
+      imageUrl,
+      (provider, p, jsonSchema) =>
+        provider.generateWithVision<unknown>(p, imageUrl, jsonSchema, options),
     ),
 };
 
@@ -102,6 +115,14 @@ async function runLogged<T extends AiTextResult | AiStructuredResult<unknown>>(
   options: GenerateOptions | undefined,
   run: RunFn<T>,
 ): Promise<T> {
+  // Checked once, before the primary provider is even resolved — a fallback
+  // attempt (below) is entirely downstream of this one gate, so it can never
+  // run once a cap has already blocked the call ("provider fallback must not
+  // bypass the caps," Day 37's own requirement). A cache hit (client.ts's
+  // own cache.ts layer, above this function) never reaches here at all, so
+  // it correctly never counts against either cap either.
+  await assertWithinSpendCap(options?.context?.userId);
+
   const providerName = resolveProviderName(callType);
   await waitForRateLimitSlot(providerName);
   const provider = getProvider(providerName);
@@ -133,10 +154,23 @@ async function runLogged<T extends AiTextResult | AiStructuredResult<unknown>>(
     const fallbackStartedAt = Date.now();
     try {
       const result = await run(fallbackProvider);
-      await logSuccess(callType, result, fallbackStartedAt, options, providerName);
+      await logSuccess(
+        callType,
+        result,
+        fallbackStartedAt,
+        options,
+        providerName,
+      );
       return result;
     } catch (fallbackErr) {
-      await logFailure(callType, fallbackProviderName, fallbackErr, fallbackStartedAt, options, providerName);
+      await logFailure(
+        callType,
+        fallbackProviderName,
+        fallbackErr,
+        fallbackStartedAt,
+        options,
+        providerName,
+      );
       throw primaryErr;
     }
   }
@@ -166,7 +200,14 @@ async function runValidatedWithCache<T>(
   const jsonSchema = z.toJSONSchema(schema);
 
   if (!isCacheableCallType(callType)) {
-    return runValidated(callType, initialPrompt, schema, jsonSchema, options, call);
+    return runValidated(
+      callType,
+      initialPrompt,
+      schema,
+      jsonSchema,
+      options,
+      call,
+    );
   }
 
   const key = buildAiCacheKey({
@@ -182,12 +223,21 @@ async function runValidatedWithCache<T>(
     // Skips the *read* only — the "Regenerate" affordance means "don't serve
     // me the stale answer," not "stop caching this input forever." Storing
     // the fresh result keeps the next (non-bypassing) call benefiting again.
-    const result = await runValidated(callType, initialPrompt, schema, jsonSchema, options, call);
+    const result = await runValidated(
+      callType,
+      initialPrompt,
+      schema,
+      jsonSchema,
+      options,
+      call,
+    );
     aiResponseCache.set(key, result);
     return result;
   }
 
-  return aiResponseCache.wrap(key, () => runValidated(callType, initialPrompt, schema, jsonSchema, options, call));
+  return aiResponseCache.wrap(key, () =>
+    runValidated(callType, initialPrompt, schema, jsonSchema, options, call),
+  );
 }
 
 // Wraps runLogged with schema validation plus the bounded, feedback-driven
@@ -218,7 +268,11 @@ async function runValidated<T>(
           const raw = await call(provider, prompt, jsonSchema);
           const parsed = schema.safeParse(raw.data);
           if (!parsed.success) {
-            throw new AiValidationError(callType, raw.provider, parsed.error.issues);
+            throw new AiValidationError(
+              callType,
+              raw.provider,
+              parsed.error.issues,
+            );
           }
           return { ...raw, data: parsed.data };
         },
@@ -235,7 +289,9 @@ async function runValidated<T>(
     }
   }
   // Unreachable — every loop iteration above either returns or throws.
-  throw new Error(`"${callType}": exhausted validation attempts without returning or throwing.`);
+  throw new Error(
+    `"${callType}": exhausted validation attempts without returning or throwing.`,
+  );
 }
 
 async function logSuccess<T extends AiTextResult | AiStructuredResult<unknown>>(
@@ -250,7 +306,11 @@ async function logSuccess<T extends AiTextResult | AiStructuredResult<unknown>>(
     provider: result.provider,
     model: result.model,
     usage: result.usage,
-    estimatedCostUsd: estimateCostUsd(result.provider, result.model, result.usage),
+    estimatedCostUsd: estimateCostUsd(
+      result.provider,
+      result.model,
+      result.usage,
+    ),
     durationMs: Date.now() - startedAt,
     success: true,
     siteId: options?.context?.siteId,

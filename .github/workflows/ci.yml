@@ -33,6 +33,17 @@ jobs:
       - name: Test with coverage
         run: npm run test:coverage
 
+      - name: Build
+        # Confirmed locally (Day 37) that `next build` succeeds with nothing
+        # but this same placeholder DATABASE_URL set — every route that
+        # touches Sanity/AI/auth config is server-rendered on demand, not
+        # statically prerendered, so none of those env vars are read until a
+        # real request comes in. `prisma migrate deploy` (the DB-touching
+        # half of the real production build, see vercel.json) is
+        # deliberately *not* run here — this step exists to catch a
+        # build-breaking code error, not to validate a deploy.
+        run: npm run build
+
       - name: Upload coverage report
         if: always()
         uses: actions/upload-artifact@v4

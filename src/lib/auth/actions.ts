@@ -3,9 +3,11 @@
 import { AuthError } from "next-auth";
 import { Prisma } from "@prisma/client";
 import * as z from "zod";
+import { headers } from "next/headers";
 import { signIn, signOut } from "@/auth";
 import { prisma } from "@/lib/db";
 import { hashPassword } from "./password";
+import { checkAuthRateLimit } from "./rateLimit";
 
 export type AuthActionState = { error?: string } | undefined;
 
@@ -16,10 +18,29 @@ const CredentialsSchema = z.object({
     .min(8, { error: "Password must be at least 8 characters." }),
 });
 
+// Vercel (and most reverse proxies) set this to a comma-separated list of
+// hops, client first — the direct-connection fallback matters for local dev,
+// where no proxy sets this header at all. Coarser than a real client IP
+// under some proxy configurations, but that's an acceptable tradeoff for a
+// rate-limit *identifier*, not something security-critical is keyed on.
+async function getClientIp(): Promise<string> {
+  const forwardedFor = (await headers()).get("x-forwarded-for");
+  return forwardedFor?.split(",")[0]?.trim() || "unknown";
+}
+
+function rateLimitedState(retryAfterSeconds: number): AuthActionState {
+  return {
+    error: `Too many attempts — please wait about ${retryAfterSeconds} second${retryAfterSeconds === 1 ? "" : "s"} and try again.`,
+  };
+}
+
 export async function signupAction(
   _prevState: AuthActionState,
   formData: FormData,
 ): Promise<AuthActionState> {
+  const verdict = checkAuthRateLimit("signup", await getClientIp());
+  if (!verdict.allowed) return rateLimitedState(verdict.retryAfterSeconds!);
+
   const parsed = CredentialsSchema.safeParse({
     email: formData.get("email"),
     password: formData.get("password"),
@@ -61,6 +82,9 @@ export async function loginAction(
   _prevState: AuthActionState,
   formData: FormData,
 ): Promise<AuthActionState> {
+  const verdict = checkAuthRateLimit("login", await getClientIp());
+  if (!verdict.allowed) return rateLimitedState(verdict.retryAfterSeconds!);
+
   try {
     await signIn("credentials", {
       email: formData.get("email"),
